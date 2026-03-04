@@ -1,0 +1,126 @@
+<!-- Encabezado del Dashboard -->
+<div class="mb-12 p-8 bg-white rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+    <div
+        class="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-inst-crema/20 rounded-full blur-3xl opacity-50 group-hover:opacity-80 transition-opacity duration-700">
+    </div>
+    <div class="relative">
+        <h1 class="text-4xl md:text-6xl font-black text-inst-vino tracking-tighter uppercase italic">
+            Dashboard SGC</h1>
+        <p class="text-sm font-bold text-inst-oro uppercase tracking-[0.3em] mt-2">
+            Sistema de Gestión de Contratos | SICT
+        </p>
+    </div>
+</div>
+
+<!-- Tarjetas de KPIs -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <!-- KPI 1: Presupuesto -->
+    <div
+        class="bg-inst-vino bg-rehilete-vino rounded-3xl p-6 shadow-xl border-b-4 border-inst-oro relative overflow-hidden group transition-all duration-300 hover:shadow-2xl hover:-translate-y-1">
+        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                </path>
+            </svg>
+        </div>
+        <div class="relative z-10 text-white">
+            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-white/70 mb-2">Total Contratado</p>
+            <p id="kpi-presupuesto" class="text-2xl font-black tracking-tighter italic">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- KPI 2: Contratos Activos -->
+    <div
+        class="bg-white rounded-3xl p-6 shadow-lg border border-slate-100 relative overflow-hidden group transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <svg class="w-16 h-16 text-inst-vino" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <div class="relative z-10">
+            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Contratos Activos</p>
+            <p id="kpi-activos" class="text-3xl font-black text-inst-vino tracking-tighter italic">...</p>
+        </div>
+    </div>
+
+    <!-- KPI 3: Estimaciones -->
+    <div
+        class="bg-white rounded-3xl p-6 shadow-lg border border-slate-100 relative overflow-hidden group transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <svg class="w-16 h-16 text-inst-oro" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <div class="relative z-10">
+            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Estimaciones Pendientes</p>
+            <p id="kpi-estimaciones" class="text-3xl font-black text-inst-oro tracking-tighter italic">...</p>
+        </div>
+    </div>
+
+    <!-- KPI 4: Fianzas -->
+    <div
+        class="bg-white rounded-3xl p-6 shadow-lg border border-slate-100 relative overflow-hidden group transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <svg class="w-16 h-16 text-inst-guinda" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                </path>
+            </svg>
+        </div>
+        <div class="relative z-10">
+            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Fianzas por Vencer</p>
+            <p id="kpi-fianzas" class="text-3xl font-black text-inst-guinda tracking-tighter italic">...</p>
+        </div>
+    </div>
+</div>
+
+<div class="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden">
+    <div class="bg-inst-crema bg-rehilete-crema px-8 py-4 border-b-2 border-inst-oro flex items-center justify-between">
+        <h2 class="text-xs font-black text-inst-vino uppercase tracking-[0.3em] flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                </path>
+            </svg>
+            Contratos Recientes de la Dependencia
+        </h2>
+    </div>
+    <div class="p-8">
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead>
+                    <tr>
+                        <th
+                            class="px-5 py-3 border-b border-slate-100 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            No. Contrato</th>
+                        <th
+                            class="px-5 py-3 border-b border-slate-100 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Estado</th>
+                        <th
+                            class="px-5 py-3 border-b border-slate-100 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Monto C/IVA</th>
+                        <th
+                            class="px-5 py-3 border-b border-slate-100 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
+                            Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="dashboard-contratos-body" class="divide-y divide-slate-50">
+                    <tr>
+                        <td colspan="4" class="px-5 py-12 text-center">
+                            <div class="flex flex-col items-center justify-center space-y-4">
+                                <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-inst-vino">
+                                </div>
+                                <p
+                                    class="text-xs font-black text-slate-400 uppercase tracking-widest italic animate-pulse">
+                                    Sincronizando Dashboard...</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

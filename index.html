@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión de Contratos (SGC)</title>
+
+  <!-- Noto Sans via Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap"
+    rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans"', 'sans-serif'],
+          },
+          colors: {
+            inst: {
+              negro: '#161a1d',
+              guinda: '#9b2247',
+              verde: '#1e5b4f',
+              oro: '#a57f2c',
+              gris: '#98989a',
+              vino: '#611232',
+              petroleo: '#002f2a',
+              crema: '#e6d194',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- SweetAlert2 for beautiful modals -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+
+  <!-- Estilos Globales -->
+  <?!= include('styles.css'); ?>
+</head>
+
+<body class="bg-gray-100 font-sans text-gray-800 antialiased overflow-hidden">
+
+  <!-- Spinner Global (Bloqueo de UI) -->
+  <div id="global-spinner"
+    class="fixed inset-0 bg-inst-vino bg-opacity-95 z-[9999] flex justify-center items-center pointer-events-auto hidden">
+    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-inst-oro"></div>
+  </div>
+
+  <!-- Layout Principal -->
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+      class="w-64 bg-rehilete-vino text-white flex flex-col hidden md:flex relative z-20 shadow-2xl overflow-hidden border-r border-inst-oro/30">
+      <!-- Sidebar Header & Toggle -->
+      <div class="h-20 flex items-center justify-between px-6 border-b border-inst-oro/20 bg-black/10 backdrop-blur-md">
+        <div class="flex items-center space-x-3 overflow-hidden">
+          <div
+            class="min-w-[32px] h-8 bg-inst-oro rounded-lg flex items-center justify-center text-inst-vino font-black shadow-lg shadow-inst-oro/20">
+            S</div>
+          <h1 class="sidebar-header-text text-base font-black tracking-widest uppercase text-inst-crema">SGC System</h1>
+        </div>
+        <button onclick="toggleSidebar()"
+          class="p-1.5 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white">
+          <svg id="toggle-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor"
+            viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7">
+            </path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 px-3 py-6 space-y-2">
+        <a href="#" onclick="cargarVista('dashboard.vw'); setActiveLink(this); return false;"
+          class="nav-link flex items-center px-4 py-3 rounded-xl transition-all duration-200 group active hover:bg-white/5">
+          <div class="min-w-[24px] text-inst-oro">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+              </path>
+            </svg>
+          </div>
+          <span class="sidebar-text ml-4 text-base font-bold text-slate-300 group-hover:text-white">Dashboard</span>
+        </a>
+
+        <a href="#" onclick="cargarVista('contratos.vw'); setActiveLink(this); return false;"
+          class="nav-link flex items-center px-4 py-3 rounded-xl transition-all duration-200 group hover:bg-white/5">
+          <div class="min-w-[24px] text-slate-400 group-hover:text-inst-oro transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+              </path>
+            </svg>
+          </div>
+          <span class="sidebar-text ml-4 text-base font-bold text-slate-300 group-hover:text-white">Contratos</span>
+        </a>
+      </nav>
+
+      <!-- Footer Branding -->
+      <div class="px-6 py-6 border-t border-inst-oro/20 bg-black/20">
+        <div class="flex items-center space-x-3">
+          <div
+            class="min-w-[32px] h-8 w-8 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-tighter">SICT</span>
+          </div>
+          <div class="sidebar-text overflow-hidden">
+            <p class="text-[11px] font-black text-slate-500 uppercase tracking-widest leading-none">Secretaría</p>
+            <p class="text-[10px] text-slate-600 font-medium mt-1 leading-tight">Infraestructura y Comunicaciones</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Área de Contenido -->
+    <div class="flex-1 flex flex-col relative">
+      <!-- Navbar -->
+      <header class="h-16 bg-white shadow flex items-center justify-between px-6 z-10 w-full">
+        <div class="flex items-center">
+          <button class="md:hidden mr-4 text-gray-500 focus:outline-none">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+          <h2 class="text-xl font-semibold text-gray-700">Sistema de Gestión de Contratos</h2>
+        </div>
+        <div class="flex items-center space-x-4">
+          <span class="text-base font-medium text-gray-600 hidden sm:block">Usuario Activo</span>
+          <div
+            class="h-8 w-8 bg-inst-oro rounded-full flex items-center justify-center text-inst-vino font-bold cursor-pointer">
+            U
+          </div>
+        </div>
+      </header>
+
+      <!-- App Shell (Contenedor de Vistas) -->
+      <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-4 transition-all duration-300">
+        <div id="app-shell" class="h-full w-full">
+          <!-- El contenido de las vistas se inyectará aquí de manera diferida (Lazy Loading) -->
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Lógica Global del Frontend -->
+  <?!= include('main.js'); ?>
+
+  <!-- Modal de Importación IA Drag & Drop -->
+  <div id="modal-importacion-ia"
+    class="fixed inset-0 bg-inst-negro/60 backdrop-blur-md z-[10000] flex justify-center items-center pointer-events-auto hidden">
+    <div
+      class="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-300 border border-white/20">
+      <!-- Header Institucional -->
+      <div class="bg-rehilete-vino px-10 py-8 text-white relative overflow-hidden border-b-4 border-inst-oro">
+        <div class="flex justify-between items-center relative z-10">
+          <div class="flex items-center space-x-5">
+            <div class="p-4 bg-white/10 rounded-[1.5rem] backdrop-blur-md border border-white/10 text-inst-oro">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z">
+                </path>
+              </svg>
+            </div>
+            <div>
+              <h3 id="modal-ia-titulo" class="text-2xl font-black tracking-tighter uppercase">Asistente Inteligente</h3>
+              <p id="modal-ia-subtitulo" class="text-[10px] font-black text-white/60 uppercase tracking-[0.3em] mt-1">
+                Carga de Documentos Técnicos</p>
+            </div>
+          </div>
+          <button onclick="cerrarModalImportacionIA()" class="p-3 hover:bg-rose-600 rounded-2xl transition-all">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Hidden Input for Logic -->
+      <input type="hidden" id="import-type-actual" value="Contratos">
+
+      <!-- Content -->
+      <div class="p-8">
+        <div id="drop-zone"
+          class="drop-zone rounded-3xl p-12 flex flex-col items-center justify-center cursor-pointer group relative overflow-hidden bg-rehilete-crema">
+          <div id="drop-zone-icon-container"
+            class="drop-zone-icon w-20 h-20 bg-inst-crema/20 text-inst-vino rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+          </div>
+          <p class="text-xl font-bold text-slate-700 mb-2">Haz clic o arrastra un archivo</p>
+          <p id="drop-zone-help-text" class="text-base text-slate-400 font-medium">Soporta PDF, Imagen y Excel de
+            Contratos</p>
+          <input type="file" id="file-input-ia" class="hidden"
+            accept="application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+
+          <!-- AI Status Overlay (Hidden by default) -->
+          <div id="ai-processing-overlay"
+            class="absolute inset-0 bg-white bg-opacity-95 flex flex-col items-center justify-center hidden z-10">
+            <div class="relative mb-6">
+              <div class="w-16 h-16 border-4 border-inst-crema border-t-inst-guinda rounded-full animate-spin"></div>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <svg class="w-6 h-6 text-inst-guinda animate-pulse" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z">
+                  </path>
+                </svg>
+              </div>
+            </div>
+            <p id="ai-status-message" class="text-slate-800 font-bold text-center px-6 text-lg">Iniciando análisis
+              inteligente...</p>
+            <p id="ai-status-subtext" class="text-slate-400 text-sm mt-2 italic">Esto puede tomar unos segundos</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="bg-slate-50 px-8 py-6 flex justify-end">
+        <button onclick="cerrarModalImportacionIA()"
+          class="px-6 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Advertencia IA (Diferencias detectadas) -->
+  <div id="modal-advertencia-ia"
+    class="fixed inset-0 bg-inst-negro/60 backdrop-blur-md z-[10000] flex justify-center items-center pointer-events-auto hidden">
+    <div
+      class="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-300 border border-white/20">
+      <!-- Header Institucional -->
+      <div class="bg-amber-500 px-10 py-8 text-white relative overflow-hidden border-b-4 border-amber-600">
+        <div class="flex justify-between items-center relative z-10">
+          <div class="flex items-center space-x-5">
+            <div class="p-4 bg-white/10 rounded-[1.5rem] backdrop-blur-md border border-white/10 text-white">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                </path>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-2xl font-black tracking-tighter uppercase">Discrepancias Detectadas</h3>
+              <p class="text-[10px] font-black text-white/60 uppercase tracking-[0.3em] mt-1">Validación de Integridad
+                de Datos</p>
+            </div>
+          </div>
+          <button onclick="cerrarModalAdvertenciaIA()" class="p-3 hover:bg-amber-600 rounded-2xl transition-all">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="p-6 max-h-[60vh] overflow-y-auto">
+        <div id="lista-cambios-ia" class="space-y-4">
+          <!-- Listado de cambios dinámico -->
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 border-t border-gray-100">
+        <button onclick="cerrarModalAdvertenciaIA()"
+          class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-white transition-all">
+          Cancelar
+        </button>
+        <button id="btn-confirmar-cambios-ia"
+          class="px-6 py-2 bg-inst-vino text-white rounded-lg text-sm font-bold shadow-lg shadow-inst-vino/20 hover:bg-inst-negro transition-all flex items-center">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Actualizar Datos
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Inicializar SPA cargando el dashboard por defecto
+    document.addEventListener('DOMContentLoaded', () => {
+      cargarVista('dashboard.vw');
+    });
+  </script>
+</body>
+
+</html>

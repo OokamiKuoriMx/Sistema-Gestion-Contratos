@@ -1,0 +1,2855 @@
+<script>
+    /**
+     * Muestra u oculta el spinner global de carga.
+     * Cuando se muestra bloquea automáticamente gracias a sus estilos pointer-events.
+     * @param {boolean} mostrar - true para mostrar, false para ocultar.
+     */
+    function toggleSpinner(mostrar) {
+        const spinner = document.getElementById('global-spinner');
+        if (mostrar) {
+            spinner.classList.remove('hidden');
+        } else {
+            spinner.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Notificación simple de éxito.
+     */
+    function notificarExito(mensaje) {
+        console.log("ÉXITO:", mensaje);
+    }
+
+    // Sidebar Logic
+    window.toggleSidebar = function () {
+        const sidebar = document.getElementById('sidebar');
+        const icon = document.getElementById('toggle-icon');
+        sidebar.classList.toggle('collapsed');
+
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+
+        // Rotate icon
+        if (isCollapsed) {
+            icon.classList.add('rotate-180');
+        } else {
+            icon.classList.remove('rotate-180');
+        }
+    };
+
+    window.setActiveLink = function (el) {
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.remove('active', 'bg-white/5');
+            link.querySelector('.sidebar-text').classList.replace('text-white', 'text-slate-300');
+            link.querySelector('div').classList.replace('text-blue-500', 'text-slate-400');
+        });
+
+        el.classList.add('active', 'bg-white/5');
+        el.querySelector('.sidebar-text').classList.replace('text-slate-300', 'text-white');
+        el.querySelector('div').classList.replace('text-slate-400', 'text-blue-500');
+    };
+
+    // Initialize sidebar state
+    document.addEventListener('DOMContentLoaded', () => {
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (isCollapsed) {
+            document.getElementById('sidebar').classList.add('collapsed');
+            document.getElementById('toggle-icon').classList.add('rotate-180');
+        }
+    });
+
+    // Utilidades Globales
+    const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(v || 0);
+    const formatoPct = (v) => (v * 100).toFixed(2) + '%';
+    const formatoPct4 = (v) => (v * 100).toFixed(4) + '%';
+
+    /**
+     * Carga una vista desde el servidor usando Lazy Loading e inyecta el HTML en #app-shell.
+     * @param {string} nombreVista - Nombre del archivo de vista (ej: 'contratos.vw').
+     * @param {object} params - Parámetros opcionales a pasar a la vista (ej: { id: 1 }).
+     */
+    function cargarVista(nombreVista, params = null) {
+        toggleSpinner(true); // 1. Mostrar el Spinner (bloqueando UI)
+
+        // Guardar params temporalmente para la vista
+        window.vistaActualParams = params;
+
+        // 2. Ejecutar google.script.run para traer el HTML
+        google.script.run
+            .withSuccessHandler(function (respuesta) {
+                // 4. Ocultar el Spinner
+                toggleSpinner(false);
+
+                if (respuesta.success) {
+                    // 3. Inyectar el HTML en #app-shell
+                    document.getElementById('app-shell').innerHTML = respuesta.data;
+
+                    // Despachar un evento por si alguna vista requiere inicializar un script externo u otra lógica
+                    const event = new CustomEvent('vistaCargada', { detail: { vista: nombreVista, params: params } });
+                    document.dispatchEvent(event);
+                } else {
+                    manejarError(respuesta);
+                }
+            })
+            .withFailureHandler(function (error) {
+                toggleSpinner(false);
+                manejarError({
+                    success: false,
+                    error: error.message,
+                    functionName: 'google.script.run / cargarVista'
+                });
+            })
+            .getView(nombreVista);
+    }
+
+    /**
+     * Manejador centralizado de errores para el frontend.
+     * @param {object} respuestaError - Objeto de error estructurado del servidor.
+     */
+    function manejarError(respuestaError) {
+        const fnName = respuestaError.functionName || 'Desconocida';
+        const detail = respuestaError.error;
+
+        // Imprimir el error en consola de manera estandarizada
+        console.error(`Error en función: [${fnName}] | Detalle: `, detail);
+
+        // Notificación en UI opcional (por alerta estándar para empezar)
+        alert(`Ocurrió un error en la aplicación.\n\nFunción: ${fnName}\nError: ${detail}`);
+    }
+
+    // --- Controladores de Vistas --- //
+
+    // Listener global para inicializar lógica específica cuando una vista termina de cargar
+    document.addEventListener('vistaCargada', function (e) {
+        if (e.detail.vista === 'contratos.vw') {
+            inicializarContratos();
+        } else if (e.detail.vista === 'contrato_detalle.vw') {
+            inicializarContratoDetalle(e.detail.params);
+        } else if (e.detail.vista === 'dashboard.vw') {
+            inicializarDashboard();
+        }
+    });
+
+    /**
+     * Maneja el cambio de pestañas en la vista de detalle.
+     * @param {string} tabId - ID del contenedor de la pestaña a mostrar.
+     */
+    function switchTab(tabId) {
+        // 1. Ocultar todos los contenidos de pestañas
+        document.querySelectorAll('.tab-content').forEach(el => {
+            el.classList.add('hidden');
+            el.classList.remove('block');
+        });
+
+        // 2. Mostrar la pestaña seleccionada
+        const target = document.getElementById(tabId);
+        if (target) {
+            target.classList.remove('hidden');
+            target.classList.add('block');
+
+            // Si entramos al programa, refrescar con el orden actual de conceptos
+            if (tabId === 'tab-programa' && window.programaActual) {
+                renderizarProgramaMatricial(window.programaActual);
+            }
+
+            // Si entramos a estimaciones, cargar listado
+            if (tabId === 'tab-estimaciones') {
+                cargarEstimacionesContrato();
+            }
+        }
+
+        // 3. Actualizar estilos de los botones
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('border-inst-vino', 'text-inst-vino', 'bg-inst-crema/30');
+            btn.classList.add('border-transparent', 'text-slate-400');
+        });
+
+        const activeBtn = document.getElementById(`btn-${tabId}`);
+        if (activeBtn) {
+            activeBtn.classList.remove('border-transparent', 'text-slate-400');
+            activeBtn.classList.add('border-inst-vino', 'text-inst-vino', 'bg-inst-crema/30');
+        }
+    }
+
+    // --- Controladores: Dashboard --- //
+
+    function inicializarDashboard() {
+        // No bloqueamos todo con el spinner global para dar sensación de rapidez,
+        // ya que el dashboard tiene su propio spinner local en la tabla de recientes
+        google.script.run
+            .withSuccessHandler(function (respuesta) {
+                if (respuesta.success) {
+                    renderizarDashboard(respuesta.data);
+                } else {
+                    manejarError(respuesta);
+                }
+            })
+            .withFailureHandler(function (error) {
+                manejarError({
+                    success: false,
+                    error: error.message,
+                    functionName: 'google.script.run / getDashboardData'
+                });
+            })
+            .getDashboardData();
+    }
+
+    function renderizarDashboard(data) {
+        if (!data) return;
+
+        // --- Renderizar KPIs ---
+        const formatoMoneda = (valor) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(valor || 0);
+
+        document.getElementById('kpi-presupuesto').textContent = formatoMoneda(data.kpis.presupuestoEjecutado);
+        document.getElementById('kpi-activos').textContent = data.kpis.contratosActivos || '0';
+        document.getElementById('kpi-estimaciones').textContent = data.kpis.estimacionesPendientes || '0';
+        document.getElementById('kpi-fianzas').textContent = data.kpis.fianzasPorVencer || '0';
+
+        // --- Renderizar Tabla de Contratos Recientes ---
+        const tbody = document.getElementById('dashboard-contratos-body');
+
+        if (!data.contratosRecientes || data.contratosRecientes.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-5 py-8 text-center text-sm text-gray-500 bg-white">No hay contratos recientes.</td></tr>`;
+            return;
+        }
+
+        let htmlRows = '';
+        data.contratosRecientes.forEach(contrato => {
+            let colorEstado = 'bg-gray-100 text-gray-800';
+            let estadoLabel = contrato.Estado ? contrato.Estado : 'N/A';
+
+            if (estadoLabel.toLowerCase() === 'activo') colorEstado = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+            else if (estadoLabel.toLowerCase() === 'finalizado') colorEstado = 'bg-blue-100 text-blue-800 border border-blue-200';
+            else if (estadoLabel.toLowerCase() === 'rescindido') colorEstado = 'bg-rose-100 text-rose-800 border border-rose-200';
+            else if (estadoLabel.toLowerCase() === 'suspendido') colorEstado = 'bg-amber-100 text-amber-800 border border-amber-200';
+
+            htmlRows += `
+            <tr class="hover:bg-inst-crema/10 transition-all duration-200 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
+                <td class="px-5 py-5 border-b border-slate-50 bg-white">
+                    <p class="text-inst-vino font-black italic uppercase tracking-tight group-hover:translate-x-1 transition-transform duration-300">
+                        ${contrato.Numero_Contrato || '-'}
+                    </p>
+                </td>
+                <td class="px-5 py-5 border-b border-slate-50 bg-white">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${colorEstado}">
+                        <span class="w-1.5 h-1.5 rounded-full mr-2 opacity-75 ${colorEstado.split(' ')[0].replace('bg-', 'bg-')}"></span>
+                        ${estadoLabel}
+                    </span>
+                </td>
+                <td class="px-5 py-5 border-b border-slate-50 bg-white">
+                    <p class="text-slate-700 font-black tracking-tighter">${formatoMoneda(contrato.Monto_Total_Con_IVA)}</p>
+                </td>
+                <td class="px-5 py-5 border-b border-slate-50 bg-white text-center">
+                    <button class="inline-flex items-center px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all duration-300">
+                        <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                        Ver Detalle
+                    </button>
+                </td>
+            </tr>
+            `;
+        });
+
+        tbody.innerHTML = htmlRows;
+    }
+
+    // --- Controladores: Listado de Contratos --- //
+
+    function inicializarContratos() {
+        toggleSpinner(true);
+
+        // Llamar al backend para obtener los datos usando google.script.run
+        google.script.run
+            .withSuccessHandler(function (respuesta) {
+                toggleSpinner(false);
+                if (respuesta.success) {
+                    renderizarContratos(respuesta.data);
+                } else {
+                    manejarError(respuesta);
+                }
+            })
+            .withFailureHandler(function (error) {
+                toggleSpinner(false);
+                manejarError({
+                    success: false,
+                    error: error.message,
+                    functionName: 'google.script.run / getContratosData'
+                });
+            })
+            .getContratosData();
+    }
+
+    function renderizarContratos(data) {
+        const tbody = document.getElementById('contratos-body');
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 border-b border-gray-100 bg-white text-sm text-center text-gray-500">No hay contratos registrados.</td></tr>`;
+            return;
+        }
+
+        let htmlRows = '';
+        data.forEach(contrato => {
+            // Conversión e internacionalización monetaria (MXN)
+            let montoValor = contrato.Monto_Total_Con_IVA || 0;
+            let formatoMonto = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(montoValor);
+
+            // Estilización de color según el estado
+            let colorEstado = 'bg-gray-100 text-gray-800';
+            let estadoLabel = contrato.Estado ? contrato.Estado : 'N/A';
+
+            if (estadoLabel.toLowerCase() === 'activo') colorEstado = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+            else if (estadoLabel.toLowerCase() === 'finalizado') colorEstado = 'bg-blue-100 text-blue-800 border border-blue-200';
+            else if (estadoLabel.toLowerCase() === 'rescindido') colorEstado = 'bg-rose-100 text-rose-800 border border-rose-200';
+            else if (estadoLabel.toLowerCase() === 'suspendido') colorEstado = 'bg-amber-100 text-amber-800 border border-amber-200';
+
+
+            htmlRows += `
+      <tr class="hover:bg-inst-crema/10 transition-all duration-200 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
+        <td class="px-8 py-5 border-b border-slate-50 bg-white">
+            <p class="text-inst-vino font-black italic uppercase tracking-tight group-hover:translate-x-1 transition-transform duration-300">
+                ${contrato.Numero_Contrato || '-'}
+            </p>
+        </td>
+        <td class="px-8 py-5 border-b border-slate-50 bg-white">
+          <p class="text-slate-600 font-bold truncate max-w-sm" title="${contrato.Objeto_Contrato || ''}">
+            ${contrato.Objeto_Contrato || '-'}
+          </p>
+        </td>
+        <td class="px-8 py-5 border-b border-slate-50 bg-white text-right">
+            <p class="text-slate-900 font-black tracking-tighter">${formatoMonto}</p>
+        </td>
+        <td class="px-8 py-5 border-b border-slate-50 bg-white text-center">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${colorEstado}">
+                <span class="w-1.5 h-1.5 rounded-full mr-2 opacity-75 ${colorEstado.split(' ')[0].replace('bg-', 'bg-')}"></span>
+                ${estadoLabel}
+            </span>
+        </td>
+      </tr>
+    `;
+        });
+
+        tbody.innerHTML = htmlRows;
+    }
+
+    // --- Controladores: Detalle de un Contrato --- //
+
+    function inicializarContratoDetalle(params) {
+        if (!params || !params.id) {
+            manejarError({ error: 'ID de contrato no proporcionado para la vista de detalle.', functionName: 'inicializarContratoDetalle' });
+            return;
+        }
+
+        // --- ASIGNACIÓN DE ID GLOBAL ---
+        window.idContratoActual = params.id;
+
+        toggleSpinner(true);
+        // Despachar el detalle básico del contrato
+        google.script.run
+            .withSuccessHandler(function (respuesta) {
+                if (respuesta.success) {
+                    renderizarContratoDetalle(respuesta.data);
+
+                    // Cargar el Catálogo de Conceptos de forma asíncrona
+                    google.script.run
+                        .withSuccessHandler(function (respC) {
+                            if (respC.success) {
+                                window.conceptosActuales = respC.data;
+                                renderizarConceptos(respC.data);
+                            }
+                        })
+                        .getConceptosContrato(params.id);
+
+                    // Cargar el Programa de Ejecución Matricial de forma asíncrona
+                    google.script.run
+                        .withSuccessHandler(function (respP) {
+                            toggleSpinner(false);
+                            if (respP.success) {
+                                window.programaActual = respP.data;
+                                renderizarProgramaMatricial(respP.data);
+                            } else {
+                                manejarError(respP);
+                            }
+                        })
+                        .withFailureHandler(function (err) {
+                            toggleSpinner(false);
+                            manejarError({ success: false, error: err.message, functionName: 'getProgramaEjecucion' });
+                        })
+                        .getProgramaEjecucion(params.id);
+
+                    // --- NUEVO: Cargar Resumen Financiero Contractual ---
+                    google.script.run
+                        .withSuccessHandler(function (respR) {
+                            if (respR.success) {
+                                renderizarResumenFinanciero(respR.data);
+                            }
+                        })
+                        .getResumenFinancieroContrato(params.id);
+
+                } else {
+                    toggleSpinner(false);
+                    manejarError(respuesta);
+                }
+            })
+            .withFailureHandler(function (error) {
+                toggleSpinner(false);
+                manejarError({
+                    success: false,
+                    error: error.message,
+                    functionName: 'google.script.run / getDetalleContrato'
+                });
+            })
+            .getDetalleContrato(params.id);
+    }
+
+    function renderizarProgramaMatricial(data) {
+        const thead = document.getElementById('tabla-programa-head');
+        // 0. Guardar IDs globales del programa
+        window.programaActualId = data.idPrograma;
+        const tbody = document.getElementById('tabla-programa-body');
+        if (!thead || !tbody) return;
+
+        if (!data || !data.meses || data.meses.length === 0) {
+            tbody.innerHTML = `<tr><td class="px-5 py-8 text-center text-gray-500 italic">No hay programa registrado.</td></tr>`;
+            return;
+        }
+
+        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(v || 0);
+        const formatoPct = (v) => (v * 100).toFixed(2) + '%';
+
+        // 1. Mostrar Chips de Periodos Premium
+        const chipsContainer = document.getElementById('lista-periodos-container');
+        const chipsList = document.getElementById('lista-periodos-chips');
+        if (chipsContainer && chipsList) {
+            chipsContainer.classList.remove('hidden');
+            chipsList.innerHTML = data.meses.map(m => `
+                <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all group border-l-4 border-l-inst-oro">
+                    <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-inst-vino transition-colors">Periodo ${m.numero || '--'}</div>
+                    <div class="text-xs font-black text-inst-vino uppercase tracking-tighter">${m.label}</div>
+                    <div class="text-[9px] text-slate-400 mt-1 font-bold">${m.start} - ${m.end}</div>
+                </div>
+            `).join('');
+        }
+
+        // 1. Sincronizar Orden con el Catálogo
+        if (window.conceptosActuales && data.conceptosMatriz) {
+            const mapaOrden = {};
+            window.conceptosActuales.forEach((c, idx) => mapaOrden[c.ID_Concepto] = idx);
+            data.conceptosMatriz.sort((a, b) => (mapaOrden[a.id] ?? 9999) - (mapaOrden[b.id] ?? 9999));
+        }
+
+        // 2. Cálculos de Totales
+        const totalesVerticales = new Array(data.meses.length).fill(0);
+        let granTotal = 0;
+        data.conceptosMatriz.forEach(c => {
+            c.montos.forEach((m, idx) => {
+                const val = parseFloat(m) || 0;
+                totalesVerticales[idx] += val;
+                granTotal += val;
+            });
+        });
+
+        // 2. Cabecera Profesional Institutional (Separando Clave y Descripción)
+        let headHtml = `
+            <tr class="bg-rehilete-vino text-white border-b-4 border-inst-oro transition-all">
+                <th rowspan="2" class="px-6 py-5 border-r border-white/10 text-left sticky left-0 z-40 bg-inst-vino text-[10px] uppercase font-black tracking-widest">Clave</th>
+                <th rowspan="2" class="px-6 py-5 border-r border-white/10 text-left sticky left-[120px] z-40 bg-inst-vino min-w-[400px] text-[10px] uppercase font-black tracking-widest">Descripción del Concepto</th>
+                <th colspan="${data.meses.length}" class="px-6 py-3 border-b border-white/10 text-center text-[10px] uppercase font-black tracking-[0.3em] opacity-60">Calendario de Ejecución Programada</th>
+                <th rowspan="2" class="px-6 py-5 border-l border-white/10 text-right text-[10px] bg-inst-vino sticky right-0 z-40 font-black uppercase w-44">Importe Total</th>
+            </tr>
+            <tr class="bg-inst-vino/95 text-white/60 border-b border-white/5">
+        `;
+        data.meses.forEach(m => {
+            headHtml += `
+                <th class="px-2 py-4 border-r border-white/5 text-center min-w-[170px]">
+                    <div class="text-[11px] font-black text-white uppercase tracking-tighter">${m.label}</div>
+                    <div class="text-[9px] text-white/40 font-black mt-0.5 tracking-widest">${m.start} - ${m.end}</div>
+                </th>`;
+        });
+        headHtml += '</tr>';
+        thead.innerHTML = headHtml;
+
+        // 3. Cuerpo de Tabla Premium
+        let bodyHtml = '';
+        data.conceptosMatriz.forEach(c => {
+            let totalFila = 0;
+            bodyHtml += `
+                <tr class="hover:bg-inst-crema/10 transition-all duration-200 border-b border-slate-50 group" data-id="${c.id}">
+                    <td class="px-6 py-5 border-r border-slate-50 bg-white sticky left-0 z-20 shadow-sm group-hover:bg-slate-50 text-xs font-black text-inst-vino uppercase tracking-tighter">${c.clave || '-'}</td>
+                    <td class="px-6 py-5 border-r border-slate-50 bg-white sticky left-[120px] z-20 shadow-sm group-hover:bg-slate-50 text-[13px] text-slate-600 font-medium leading-relaxed">${c.descripcion || '-'}</td>
+            `;
+            c.montos.forEach((m, idx) => {
+                const montoVal = parseFloat(m) || 0;
+                totalFila += montoVal;
+                const pctRelativo = granTotal > 0 ? (montoVal / granTotal) : 0;
+                const style = montoVal > 0 ? 'text-slate-800' : 'text-slate-300';
+                const mes = data.meses[idx];
+
+                bodyHtml += `
+                    <td class="px-3 py-6 text-right border-r border-slate-50 relative group/cell">
+                        <div contenteditable="true" 
+                             oninput="recalcularFilaPrograma(this, 'monto')"
+                             onfocus="this.dataset.original = this.innerText"
+                             onblur="autoGuardarPeriodo(this)"
+                             data-tipo="monto"
+                             data-id-periodo="${mes.id}"
+                             class="text-sm font-black font-sans outline-none focus:ring-4 focus:ring-inst-oro/20 rounded-lg px-2 py-1 transition-all ${style}">${formatoMoneda(montoVal)}</div>
+                        
+                        <div contenteditable="true"
+                             oninput="recalcularFilaPrograma(this, 'pct')"
+                             onfocus="this.dataset.original = this.innerText"
+                             onblur="autoGuardarPeriodo(this)"
+                             data-tipo="pct"
+                             data-id-periodo="${mes.id}"
+                             class="text-xs text-inst-oro font-black mt-1 outline-none focus:ring-4 focus:ring-inst-oro/10 rounded px-2 inline-block transition-all tracking-tighter italic">${formatoPct4(pctRelativo)}</div>
+                    </td>`;
+            });
+            bodyHtml += `
+                <td class="px-6 py-6 border-l border-slate-100 text-right bg-slate-50/30 font-black text-inst-vino font-sans sticky right-0 z-20 group-hover:bg-slate-100 col-total-fila">
+                    <div class="text-sm tracking-tighter">${formatoMoneda(totalFila)}</div>
+                    <div class="text-[9px] uppercase tracking-widest mt-1 indicator-remanente ${totalFila > (c.totalConcepto + 0.1) ? 'text-rose-600' : 'text-slate-400'}">
+                        ${totalFila < (c.totalConcepto - 0.1) ? 'Falta: ' + formatoMoneda(c.totalConcepto - totalFila) : (totalFila > (c.totalConcepto + 0.1) ? 'Exceso!' : 'Completo')}
+                    </div>
+                </td>
+            </tr>`;
+        });
+
+        // 4. Totales Premium Institucionales
+        let acumuladoImporte = 0;
+        let tempAcumTotal = 0;
+
+        // Fila 1: Importes
+        let f1 = `<tr class="bg-slate-50/50 border-t-2 border-slate-200">
+            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-[10px] text-slate-400 uppercase font-black tracking-widest">Total Mensual (Importe)</td>`;
+        totalesVerticales.forEach(tv => f1 += `<td class="px-3 py-6 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(tv)}</td>`);
+        f1 += `<td class="px-6 py-6 text-right bg-slate-100 sticky right-0 z-30 font-black text-inst-vino text-sm border-l border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td></tr>`;
+
+        // Fila 2: % Mensual
+        let f2 = `<tr class="bg-white border-b border-slate-50">
+            <td colspan="2" class="px-6 py-4 sticky left-0 z-20 bg-white border-r border-slate-100 text-[10px] text-slate-300 uppercase font-bold italic tracking-widest">Incidencia Mensual (%)</td>`;
+        totalesVerticales.forEach(tv => f2 += `<td class="px-3 py-4 text-right text-inst-oro font-black text-sm border-r border-slate-50 italic tracking-tighter">${formatoPct4(granTotal > 0 ? tv / granTotal : 0)}</td>`);
+        f2 += `<td class="px-6 py-4 text-right bg-white sticky right-0 z-30 font-black text-slate-200 text-xs tracking-widest">--</td></tr>`;
+
+        // Fila 3: Acumulado Importe
+        let f3 = `<tr class="bg-slate-50/50 border-t border-slate-100">
+            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-[10px] text-slate-400 uppercase font-black tracking-widest">Monto Acumulado Progrado</td>`;
+        totalesVerticales.forEach(tv => {
+            acumuladoImporte += tv;
+            f3 += `<td class="px-3 py-6 text-right text-slate-600 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(acumuladoImporte)}</td>`;
+        });
+        f3 += `<td class="px-6 py-6 text-right bg-slate-100 sticky right-0 z-30 font-black text-inst-vino text-sm border-l border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td></tr>`;
+
+        // Fila 4: Avance % (Highlight Institucional)
+        let f4 = `<tr class="bg-rehilete-vino text-white font-black overflow-hidden relative">
+            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-inst-vino border-r border-white/10 text-[11px] uppercase tracking-[0.3em] italic text-inst-oro">Avance Programado (%)</td>`;
+        totalesVerticales.forEach(tv => {
+            tempAcumTotal += tv;
+            f4 += `<td class="px-3 py-8 text-right border-r border-white/5 text-xl font-sans tracking-tight">${formatoPct4(granTotal > 0 ? tempAcumTotal / granTotal : 0)}</td>`;
+        });
+        f4 += `<td class="px-6 py-8 text-right bg-inst-vino sticky right-0 z-30 font-black text-inst-oro text-2xl border-l border-white/10 shadow-2xl">100.00%</td></tr>`;
+
+        bodyHtml += f1 + f2 + f3 + f4;
+        tbody.innerHTML = bodyHtml;
+    }
+
+    function renderizarContratoDetalle(data) {
+        if (!data) return;
+
+        // Formateadores locales
+        const formatoMoneda = (valor) => {
+            let valNum = parseFloat(valor);
+            return isNaN(valNum) ? '$0.00' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(valNum);
+        };
+        const formatoFecha = (valorStr) => {
+            if (!valorStr) return '--/--/----';
+            try {
+                const date = new Date(valorStr);
+                return new Intl.DateTimeFormat('es-MX', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+            } catch (e) { return valorStr; }
+        };
+        const formatoPct = (v) => v ? parseFloat(v).toFixed(2) + '%' : '0.00%';
+
+        // --- 1. Top Header Info ---
+        document.getElementById('titulo-numero-contrato').textContent = data.Numero_Contrato || 'Contrato sin número';
+        document.getElementById('lbl-objeto-contrato').textContent = data.Objeto_Contrato || 'Sin descripción';
+
+        const badgeUbicacion = document.getElementById('badge-ubicacion-header');
+        if (badgeUbicacion) {
+            badgeUbicacion.innerHTML = `<svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> ${data.Ubicacion_Obra || 'No especificada'}`;
+        }
+
+        // --- 2. Hero Section (Dashboard) ---
+        // Financiero
+        const lblMontoHero = document.getElementById('resumen-total') || document.getElementById('lbl-monto-con-iva');
+        if (lblMontoHero) lblMontoHero.textContent = formatoMoneda(data.Monto_Total_Con_IVA);
+
+        // Tiempo
+        const lblPlazoHero = document.getElementById('lbl-plazo-dias');
+        if (lblPlazoHero) lblPlazoHero.textContent = (data.Plazo_Ejecucion_Dias || '0');
+
+        const lblFechaFin = document.getElementById('lbl-fecha-fin');
+        if (lblFechaFin) lblFechaFin.textContent = formatoFecha(data.Fecha_Fin_Obra);
+
+        // Contratista
+        const lblContratista = document.getElementById('lbl-contratista');
+        if (lblContratista) lblContratista.textContent = data.Nombre_Contratista || data.ID_Contratista || 'No especificado';
+
+        // --- 3. Cálculos de Progreso ---
+        // Progreso de Tiempo (Días transcurridos vs Total)
+        if (data.Fecha_Inicio_Obra && data.Fecha_Fin_Obra) {
+            const inicio = new Date(data.Fecha_Inicio_Obra);
+            const fin = new Date(data.Fecha_Fin_Obra);
+            const hoy = new Date();
+
+            const totalMs = fin - inicio;
+            const transcurridoMs = hoy - inicio;
+
+            let pctTiempo = 0;
+            if (totalMs > 0) {
+                pctTiempo = Math.min(100, Math.max(0, (transcurridoMs / totalMs) * 100));
+            }
+
+            // Actualizar Progress Bar de Tiempo (Opcional si decidimos separar las barras, 
+            // por ahora en el hero financiero pusimos una de "Progreso de Ejecución")
+            // Vamos a usar esa para el presupuesto y tal vez añadir una para tiempo.
+        }
+
+        // --- 4. Cards Detalle (Management Grid) ---
+        document.getElementById('lbl-area-responsable').textContent = data.Area_Responsable || 'No especificada';
+        document.getElementById('lbl-no-contrato-fisico').textContent = data.Numero_Contrato || '-';
+        document.getElementById('lbl-no-concurso').textContent = data.No_Concurso || '-';
+        document.getElementById('lbl-fecha-adjudicacion').textContent = formatoFecha(data.Fecha_Adjudicacion);
+        document.getElementById('lbl-fecha-firma').textContent = formatoFecha(data.Fecha_Firma);
+
+        document.getElementById('lbl-amortizacion-anticipo').textContent = formatoPct(data.Porcentaje_Amortizacion_Anticipo);
+        document.getElementById('lbl-fianza-cumplimiento').textContent = data.No_Fianza_Cumplimiento || 'PENDIENTE';
+        document.getElementById('lbl-fianza-anticipo').textContent = data.No_Fianza_Anticipo || 'N/A';
+
+        document.getElementById('lbl-penas-convencionales').textContent = formatoPct(data.Porcentaje_Penas_Convencionales);
+        document.getElementById('lbl-retencion-vigilancia').textContent = formatoPct(data.Retencion_Vigilancia_Pct);
+        document.getElementById('lbl-otras-retenciones').textContent = formatoPct(data.Otras_Retenciones_Pct);
+
+        document.getElementById('lbl-residente').textContent = data.Nombre_Residente_Dependencia || '-';
+        document.getElementById('lbl-superintendente').textContent = data.Nombre_Superintendente_Contratista || '-';
+
+        // --- 5. Estatus Visual (Badge Header) ---
+        const badgeHeader = document.getElementById('badge-estado-contrato-header');
+        let estadoStr = (data.Estado || 'N/A').toLowerCase();
+
+        if (badgeHeader) {
+            badgeHeader.textContent = estadoStr.toUpperCase();
+            badgeHeader.className = "px-4 py-1.5 rounded-full text-sm font-black uppercase tracking-widest shadow-sm transition-all duration-300";
+
+            if (estadoStr === 'activo') {
+                badgeHeader.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
+            } else if (estadoStr === 'finalizado') {
+                badgeHeader.classList.add('bg-blue-50', 'text-blue-700', 'border', 'border-blue-200');
+            } else if (estadoStr === 'rescindido') {
+                badgeHeader.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
+            } else if (estadoStr === 'suspendido') {
+                badgeHeader.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
+            } else {
+                badgeHeader.classList.add('bg-slate-50', 'text-slate-500', 'border', 'border-slate-200');
+            }
+        }
+
+        // Almacenar data para edición posterior
+        window.contratoActual = data;
+    }
+
+    /**
+     * Abre el modal de edición y lo carga con la data actual almacenada en window.contratoActual.
+     */
+    window.abrirModalEditarDatosGenerales = function () {
+        const data = window.contratoActual;
+        if (!data) {
+            console.error("No hay datos de contrato cargados para editar.");
+            return;
+        }
+
+        const modal = document.getElementById('modal-editar-datos-generales');
+        const form = document.getElementById('form-editar-datos-generales');
+        if (!modal || !form) return;
+
+        // Limpiar form y setear valores
+        form.reset();
+
+        // Función helper para formatear fechas para input type="date"
+        const isoDate = (str) => {
+            if (!str) return '';
+            try {
+                const date = new Date(str);
+                if (isNaN(date.getTime())) return '';
+                return date.toISOString().split('T')[0];
+            } catch (e) { return ''; }
+        };
+
+        // Poblar campos usando el atributo name de los inputs
+        const inputs = form.querySelectorAll('input, textarea, select');
+        inputs.forEach(input => {
+            const field = input.getAttribute('name');
+            if (field && data[field] !== undefined) {
+                if (input.type === 'date') {
+                    input.value = isoDate(data[field]);
+                } else {
+                    input.value = data[field];
+                }
+            }
+        });
+
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    };
+
+    window.cerrarModalEditarDatosGenerales = function () {
+        const modal = document.getElementById('modal-editar-datos-generales');
+        if (modal) modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    };
+
+    window.abrirModalSobrecostos = function () {
+        const data = window.contratoActual;
+        if (!data) return;
+
+        const modal = document.getElementById('modal-sobrecostos');
+        const form = document.getElementById('form-sobrecostos');
+        if (!modal || !form) return;
+
+        form.reset();
+
+        // Cargar valores actuales del contrato
+        const fields = ['Pct_Indirectos_Oficina', 'Pct_Indirectos_Campo', 'Pct_Indirectos_Totales', 'Pct_Financiamiento', 'Pct_Utilidad', 'Pct_Cargos_SFP', 'Pct_ISN'];
+        fields.forEach(f => {
+            const input = form.querySelector(`[name="${f}"]`);
+            if (input) {
+                input.value = data[f] !== undefined ? data[f] : (f === 'Pct_Cargos_SFP' ? 0.5025 : 0);
+            }
+        });
+
+        // Obtener conteo de conceptos
+        document.getElementById('count-conceptos').innerText = "...";
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (idContrato) {
+            google.script.run
+                .withSuccessHandler(res => {
+                    if (res.success) document.getElementById('count-conceptos').innerText = res.data.length;
+                    else document.getElementById('count-conceptos').innerText = "0";
+                })
+                .getCatalogoConceptos(idContrato);
+        }
+
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+        window.liveUpdateSobrecosto();
+    };
+
+    window.cerrarModalSobrecostos = function () {
+        const modal = document.getElementById('modal-sobrecostos');
+        if (modal) modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    };
+
+    window.liveUpdateSobrecosto = function (isPrimary = false) {
+        const form = document.getElementById('form-sobrecostos');
+        const getVal = (name) => parseFloat(form.querySelector(`[name="${name}"]`).value) || 0;
+        const setVal = (name, val) => {
+            const el = form.querySelector(`[name="${name}"]`);
+            if (el) el.value = val.toFixed(4);
+        };
+
+        let indOfi = getVal('Pct_Indirectos_Oficina');
+        let indCam = getVal('Pct_Indirectos_Campo');
+        let indTot = getVal('Pct_Indirectos_Totales');
+
+        // Lógica de prioridad
+        if (isPrimary) {
+            // El usuario editó el total manualmente. 
+            // Podríamos intentar repartirlo, pero por ahora solo respetamos el total.
+        } else {
+            // El usuario editó Oficina o Campo, sincronizamos el total.
+            indTot = indOfi + indCam;
+            setVal('Pct_Indirectos_Totales', indTot);
+        }
+
+        const finPct = getVal('Pct_Financiamiento');
+        const utiPct = getVal('Pct_Utilidad');
+        const sfpPct = getVal('Pct_Cargos_SFP');
+        const isnPct = getVal('Pct_ISN');
+
+        const DIRECTO = 100.00; // Base de simulación
+
+        // 1. Indirectos (Usamos el TOTAL)
+        const indMonto = DIRECTO * (indTot / 100);
+        const sub1 = DIRECTO + indMonto;
+
+        // 2. Financiamiento
+        const finMonto = sub1 * (finPct / 100);
+        const sub2 = sub1 + finMonto;
+
+        // 3. Utilidad
+        const utiMonto = sub2 * (utiPct / 100);
+        const sub3 = sub2 + utiMonto;
+
+        // 4. Cargos Adicionales
+        const sfpMonto = sub3 * (0.005025); // Factor 5 al millar simplificado (0.5% / 0.995)
+        const isnMonto = DIRECTO * (isnPct / 100);
+        const cargosTotal = sfpMonto + isnMonto;
+
+        const puFinal = sub3 + cargosTotal;
+        const factorSobreprecio = puFinal / DIRECTO;
+
+        // Actualizar UI Preview
+        const setTxt = (id, val, isPrice = true) => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = isPrice ? val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : val.toFixed(4);
+        };
+
+        setTxt('prev-pct-ind', indTot, false);
+        setTxt('prev-val-ind', indMonto);
+        setTxt('prev-sub1', sub1);
+
+        setTxt('prev-pct-fin', finPct, false);
+        setTxt('prev-val-fin', finMonto);
+        setTxt('prev-sub2', sub2);
+
+        setTxt('prev-pct-util', utiPct, false);
+        setTxt('prev-val-util', utiMonto);
+        setTxt('prev-sub3', sub3);
+
+        setTxt('prev-val-cargos', cargosTotal);
+        setTxt('prev-pu-final', puFinal);
+        setTxt('prev-fs', factorSobreprecio, false);
+    };
+
+    window.guardarFactoresSobrecosto = function () {
+        const form = document.getElementById('form-sobrecostos');
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato || !form) return;
+
+        Swal.fire({
+            title: '¿Aplicar Sobrecostos?',
+            text: "Se actualizarán todos los Precios Unitarios del catálogo basándose en los porcentajes definidos. Esta acción modificará permanentemente el catálogo.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Sí, aplicar a todo el catálogo',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                toggleSpinner(true);
+                const formData = new FormData(form);
+                const factores = {};
+                formData.forEach((v, k) => factores[k] = parseFloat(v) || 0);
+
+                google.script.run
+                    .withSuccessHandler(res => {
+                        toggleSpinner(false);
+                        if (res.success) {
+                            notificar('Éxito', 'Factores aplicados y catálogo actualizado correctamente.', 'success');
+                            window.cerrarModalSobrecostos();
+                            renderizarContratoDetalle(idContrato); // Recargar vista
+                        } else {
+                            notificar('Error', res.error, 'error');
+                        }
+                    })
+                    .aplicarFactoresSobrecostoCatalogo(idContrato, factores);
+            }
+        });
+    };
+
+    /**
+     * Recolecta los datos del formulario y llama al servidor para actualizar.
+     */
+    window.guardarEdicionDatosGenerales = function () {
+        const form = document.getElementById('form-editar-datos-generales');
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato || !form) return;
+
+        toggleSpinner(true);
+
+        const formData = new FormData(form);
+        const nuevosDatos = {};
+        formData.forEach((value, key) => {
+            nuevosDatos[key] = value;
+        });
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                if (res.success) {
+                    // Refrescar la vista completa para ver los cambios
+                    inicializarContratoDetalle({ id: idContrato });
+                    cerrarModalEditarDatosGenerales();
+                    notificarExito("Contrato actualizado correctamente.");
+                } else {
+                    toggleSpinner(false);
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'guardarEdicionDatosGenerales' });
+            })
+            .actualizarDatosContrato(idContrato, nuevosDatos);
+    };
+
+    function renderizarConceptos(data) {
+        const tbody = document.getElementById('tabla-conceptos-body');
+        if (!tbody) return;
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-8 border-b border-gray-200 bg-white text-sm text-center text-gray-500 italic">No hay conceptos registrados.</td></tr>`;
+            return;
+        }
+
+        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+        const formatoNumero = (v) => new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2 }).format(v || 0);
+
+        let html = '';
+        let subtotalGeneral = 0;
+
+        data.forEach(c => {
+            const cant = parseFloat(c.Cantidad_Contratada) || 0;
+            const pu = parseFloat(c.Precio_Unitario) || 0;
+            const importe = cant * pu;
+            subtotalGeneral += importe;
+
+            const cantFormateada = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(cant);
+
+            html += `
+                <tr class="hover:bg-inst-crema/10 transition-all duration-200 border-b border-slate-50 group" data-id="${c.ID_Concepto}">
+                    <td class="px-6 py-5 text-xs font-black text-inst-vino uppercase tracking-tighter celda-editable">${c.Clave || ''}</td>
+                    <td class="px-6 py-5 text-[13px] leading-relaxed text-slate-600 font-medium celda-editable">${c.Descripcion || ''}</td>
+                    <td class="px-6 py-5 text-center text-xs font-black text-slate-400 uppercase tracking-widest celda-editable">${c.Unidad || ''}</td>
+                    <td onblur="formatearCelda(this, 'cantidad')" oninput="recalcularFila(this)"
+                        class="px-6 py-5 text-right text-sm font-black text-slate-700 font-sans col-cantidad celda-editable">${cantFormateada}</td>
+                    <td onblur="formatearCelda(this, 'precio')" oninput="recalcularFila(this)"
+                        class="px-6 py-5 text-right text-sm font-black text-slate-700 font-sans col-precio celda-editable">${formatoMoneda(pu)}</td>
+                    <td class="px-6 py-5 text-right text-sm font-black text-inst-vino font-sans col-importe bg-slate-50/30">${formatoMoneda(importe)}</td>
+                    <td class="px-6 py-5 text-center">
+                        <div class="flex items-center justify-center space-x-2 opacity-40 group-hover:opacity-100 transition-opacity">
+                            <div class="flex flex-col space-y-0.5">
+                                 <button onclick="moverConcepto(this, 'up')" class="p-1 text-slate-400 hover:text-inst-vino hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 15l7-7 7 7"></path></svg>
+                                 </button>
+                                 <button onclick="moverConcepto(this, 'down')" class="p-1 text-slate-400 hover:text-inst-vino hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7"></path></svg>
+                                 </button>
+                            </div>
+                            <button onclick="abrirDrillDownMatriz('${c.ID_Concepto}')" 
+                                class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-emerald-100" title="Ver Matriz">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                            </button>
+                            <button onclick="habilitarEdicionFila(this)" 
+                                class="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-blue-100 btn-editar-fila" title="Editar">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button onclick="eliminarConceptoUI('${c.ID_Concepto}')" 
+                                class="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-rose-100" title="Eliminar">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+
+        // Resumen Fiscal Premium (Look Factura)
+        const iva = subtotalGeneral * 0.16;
+        const totalConIva = subtotalGeneral + iva;
+
+        html += `
+            <tr class="bg-slate-50/50 border-t-2 border-slate-200">
+                <td colspan="5" class="px-6 py-6 border-r border-slate-100">
+                    <div class="flex items-center space-x-3 opacity-30">
+                        <div class="h-px w-12 bg-inst-vino"></div>
+                        <span class="text-[9px] font-black uppercase tracking-[0.4em] text-inst-vino">Resumen Financiero del Catálogo</span>
+                    </div>
+                </td>
+                <td class="px-6 py-6 text-right">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Subtotal</p>
+                    <p class="text-lg font-black text-slate-700 tracking-tighter">${formatoMoneda(subtotalGeneral)}</p>
+                </td>
+                <td class="px-6 py-6"></td>
+            </tr>
+            <tr class="bg-white border-t border-slate-100">
+                <td colspan="5" class="px-6 py-4 border-r border-slate-100"></td>
+                <td class="px-6 py-4 text-right">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">I.V.A. (16.00%)</p>
+                    <p class="text-lg font-black text-slate-500 tracking-tighter">${formatoMoneda(iva)}</p>
+                </td>
+                <td class="px-6 py-4"></td>
+            </tr>
+            <tr class="bg-rehilete-crema border-t-4 border-inst-oro">
+                <td colspan="5" class="px-6 py-8 border-r border-inst-oro/10">
+                    <div class="flex items-center space-x-4">
+                        <div class="p-3 bg-inst-vino rounded-2xl shadow-lg shadow-inst-vino/20">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-black text-inst-vino uppercase tracking-[0.2em]">Importe Total Contractual</h4>
+                            <p class="text-[10px] font-bold text-inst-vino/60 uppercase tracking-widest mt-0.5">Incluye Impuesto al Valor Agregado</p>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-6 py-8 text-right bg-inst-vino shadow-2xl">
+                    <p class="text-[10px] font-black text-white/50 uppercase tracking-widest mb-1">Total con IVA</p>
+                    <p class="text-3xl font-black text-white tracking-tighter">${formatoMoneda(totalConIva)}</p>
+                </td>
+                <td class="px-6 py-8 bg-inst-vino"></td>
+            </tr>`;
+
+        tbody.innerHTML = html;
+
+        // Actualizar también las tarjetas del encabezado si el total cambió
+        const lblSinIva = document.getElementById('lbl-monto-sin-iva');
+        const lblConIva = document.getElementById('lbl-monto-con-iva');
+        if (lblSinIva) lblSinIva.textContent = formatoMoneda(subtotalGeneral);
+        if (lblConIva) lblConIva.textContent = formatoMoneda(totalConIva);
+    }
+
+    /**
+     * Intercambia la posición de un concepto en la interfaz y guarda el nuevo orden.
+     */
+    function moverConcepto(btn, direccion) {
+        const tr = btn.closest('tr');
+        const tbody = tr.parentNode;
+
+        if (direccion === 'up') {
+            const prev = tr.previousElementSibling;
+            if (prev && prev.dataset.id) {
+                tbody.insertBefore(tr, prev);
+            } else {
+                return; // Ya es el primero
+            }
+        } else {
+            const next = tr.nextElementSibling;
+            if (next && next.dataset.id) {
+                tbody.insertBefore(next, tr);
+            } else {
+                return; // Ya es el último
+            }
+        }
+
+        // Obtener nuevo orden de IDs
+        const ids = Array.from(tbody.querySelectorAll('tr[data-id]')).map(row => row.dataset.id);
+        syncOrdenConceptos(ids);
+    }
+
+    /**
+     * Sincroniza el orden de los conceptos con el servidor.
+     */
+    function syncOrdenConceptos(listaIds) {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        // 1. Mostrar Spinner Global (Bloqueo Total)
+        toggleSpinner(true, "Guardando nuevo orden y sincronizando programa...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (!res.success) {
+                    manejarError(res);
+                } else {
+                    // 2. Actualizar el estado local (window.conceptosActuales)
+                    if (window.conceptosActuales) {
+                        const nuevoMapa = {};
+                        listaIds.forEach((id, index) => nuevoMapa[id] = index);
+                        window.conceptosActuales.sort((a, b) => nuevoMapa[a.ID_Concepto] - nuevoMapa[b.ID_Concepto]);
+                    }
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'syncOrdenConceptos' });
+            })
+            .actualizarOrdenConceptos(idContrato, listaIds);
+    }
+
+    /**
+     * Habilita la edición de todas las celdas en una fila específica.
+     */
+    function habilitarEdicionFila(btn) {
+        const tr = btn.closest('tr');
+        const idConcepto = tr.getAttribute('data-id');
+        const concepto = (window.conceptosActuales || []).find(c => String(c.ID_Concepto) === String(idConcepto));
+        const tieneMatriz = concepto ? concepto.Tiene_Matriz : false;
+
+        const celdas = tr.querySelectorAll('.celda-editable');
+        const isEditing = tr.dataset.editing === 'true';
+
+        if (!isEditing) {
+            // Entrar en modo edición
+            tr.dataset.editing = 'true';
+            celdas.forEach(c => {
+                // Si tiene matriz, NO permitir editar el Precio Unitario (col-precio)
+                if (tieneMatriz && c.classList.contains('col-precio')) {
+                    c.setAttribute('contenteditable', 'false');
+                    c.style.backgroundColor = '#f8fafc'; // slate-50
+                    c.style.color = '#94a3b8'; // slate-400
+                    c.title = "Protegido: Existe una matriz asociada.";
+                } else {
+                    c.setAttribute('contenteditable', 'true');
+                }
+                c.dataset.original = c.innerText;
+            });
+
+            // Cambiar icono a "Check" (Guardar)
+            btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+            btn.classList.replace('text-blue-600', 'text-emerald-600');
+            btn.classList.replace('hover:bg-blue-50', 'hover:bg-emerald-50');
+            btn.title = "Guardar Cambios";
+
+            // Enfocar la primera celda editable real
+            const firstEditable = Array.from(celdas).find(c => c.getAttribute('contenteditable') === 'true');
+            if (firstEditable) firstEditable.focus();
+        } else {
+            // Guardar cambios
+            guardarFila(tr, btn);
+        }
+    }
+
+    /**
+     * Aplica formato visual a la celda al perder el foco (blur).
+     */
+    function formatearCelda(celda, tipo) {
+        let valorRaw = celda.innerText.replace(/[^0-9.-]+/g, "");
+        let valor = parseFloat(valorRaw) || 0;
+
+        if (tipo === 'precio') {
+            celda.innerText = formatoMoneda(valor);
+        } else if (tipo === 'cantidad') {
+            // Formato con hasta 4 decimales
+            celda.innerText = new Intl.NumberFormat('es-MX', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 4
+            }).format(valor);
+        } else {
+            celda.innerText = celda.innerText.trim();
+        }
+    }
+
+    /**
+     * Sincroniza los datos de la fila con el servidor y vuelve a modo lectura.
+     */
+    function guardarFila(tr, btn) {
+        const idConcepto = tr.dataset.id;
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+
+        const datos = {
+            ID_Concepto: idConcepto,
+            ID_Contrato: idContrato,
+            Clave: tr.cells[0].innerText.trim(), // Ajustado índice tras quitar col drag
+            Descripcion: tr.cells[1].innerText.trim(),
+            Unidad: tr.cells[2].innerText.trim(),
+            Cantidad_Contratada: tr.cells[3].innerText.replace(/[^0-9.-]+/g, ""),
+            Precio_Unitario: tr.cells[4].innerText.replace(/[^0-9.-]+/g, "")
+        };
+
+        // BLOQUEO TOTAL DE UI
+        toggleSpinner(true, "Guardando cambios en catálogo...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    // Volver a modo lectura
+                    tr.dataset.editing = 'false';
+                    tr.querySelectorAll('.celda-editable').forEach(c => c.setAttribute('contenteditable', 'false'));
+
+                    // Restaurar icono original (Lápiz)
+                    btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>`;
+                    btn.classList.remove('text-emerald-600', 'hover:bg-emerald-50');
+                    btn.classList.add('text-blue-600', 'hover:bg-blue-50');
+                    btn.title = "Editar Fila";
+
+                    // Feedback de éxito
+                    tr.classList.add('bg-emerald-50');
+                    setTimeout(() => tr.classList.remove('bg-emerald-50'), 600);
+
+                    // Actualizar estado local
+                    if (window.conceptosActuales) {
+                        const idx = window.conceptosActuales.findIndex(con => String(con.ID_Concepto) === String(idConcepto));
+                        if (idx !== -1) window.conceptosActuales[idx] = res.data;
+                    }
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'guardarFila' });
+            })
+            .upsertConcepto(datos);
+    }
+
+    /**
+     * Recalcula el importe de la fila y el total general instantáneamente.
+     */
+    function recalcularFila(celda) {
+        const tr = celda.closest('tr');
+        const cant = parseFloat(tr.querySelector('.col-cantidad').innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        const pu = parseFloat(tr.querySelector('.col-precio').innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        const tdImporte = tr.querySelector('.col-importe');
+
+        const importe = cant * pu;
+        tdImporte.innerText = formatoMoneda(importe);
+
+        // Recalcular Total General sumando todas las filas visibles
+        let subtotal = 0;
+        document.querySelectorAll('#tabla-conceptos-body tr[data-id]').forEach(fila => {
+            const imp = parseFloat(fila.querySelector('.col-importe').innerText.replace(/[^0-9.-]+/g, "")) || 0;
+            subtotal += imp;
+        });
+
+        const iva = subtotal * 0.16;
+        const total = subtotal + iva;
+
+        // Actualizar visualmente los totales de la tabla
+        const lblSinIva = document.getElementById('lbl-monto-sin-iva');
+        if (lblSinIva) lblSinIva.textContent = formatoMoneda(subtotal);
+
+        const lblConIva = document.getElementById('resumen-total') || document.getElementById('lbl-monto-con-iva');
+        if (lblConIva) lblConIva.textContent = formatoMoneda(total);
+
+        // Actualizar los summaries al final de la tabla (si se encuentran)
+        // Por simplicidad en este paso solo actualizamos las tarjetas globales
+    }
+
+    // Gestionar Tecla Enter para saltar de celda (opcional but pro)
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.getAttribute('contenteditable') === 'true') {
+            e.preventDefault();
+            e.target.blur();
+        }
+    });
+
+    /**
+     * Crea un nuevo concepto vacío en el servidor y refresca la tabla.
+     */
+    function agregarConceptoInPlace() {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        toggleSpinner(true);
+        const nuevoConcepto = {
+            ID_Contrato: idContrato,
+            Clave: 'NUEVO',
+            Descripcion: 'Nuevo Concepto',
+            Unidad: 'UNID',
+            Cantidad_Contratada: 0,
+            Precio_Unitario: 0
+        };
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    // Recargar conceptos para ver la nueva fila
+                    google.script.run
+                        .withSuccessHandler(function (respC) {
+                            if (respC.success) {
+                                renderizarConceptos(respC.data);
+                                // Opcional: Podríamos hacer scroll al final o enfocar la nueva fila
+                            }
+                        })
+                        .getConceptosContrato(idContrato);
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'agregarConceptoInPlace' });
+            })
+            .upsertConcepto(nuevoConcepto);
+    }
+    function eliminarConceptoUI(idConcepto) {
+        if (!confirm('¿Seguro que deseas eliminar este concepto?')) return;
+        const idContrato = window.idContratoActual;
+
+        toggleSpinner(true);
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    google.script.run
+                        .withSuccessHandler(function (respC) {
+                            if (respC.success) renderizarConceptos(respC.data);
+                        })
+                        .getConceptosContrato(idContrato);
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'eliminarConceptoUI' });
+            })
+            .eliminarConcepto(idConcepto);
+    }
+
+    /**
+     * Purgar Matriz (Eliminar Insumos) de un concepto.
+     */
+    function purgarMatrizConceptoUI(idConcepto) {
+        Swal.fire({
+            title: '¿Purgar matriz del concepto?',
+            text: "Se eliminarán todos los insumos relacionados. El Precio Unitario y Costo Directo volverán a ser editables manualmente.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#f59e0b',
+            confirmButtonText: 'Sí, purgar matriz',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                toggleSpinner(true);
+                google.script.run
+                    .withSuccessHandler(function (resp) {
+                        toggleSpinner(false);
+                        if (resp.success) {
+                            Swal.fire('¡Purgado!', resp.result || 'Insumos eliminados correctamente.', 'success');
+                            inicializarContratoDetalle({ id: window.idContratoActual }); // Recargar
+                        } else {
+                            manejarError(resp);
+                        }
+                    })
+                    .purgarMatrizConcepto(idConcepto);
+            }
+        });
+    }
+
+    /**
+     * Renderiza el panel de resumen financiero del contrato en el dashboard.
+     */
+    function renderizarResumenFinanciero(data) {
+        const panel = document.getElementById('panel-resumen-financiero-contrato');
+        if (!panel) return;
+
+        const formatoM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+        const formatoP = (v) => v ? parseFloat(v).toFixed(2) + '%' : '0.00%';
+
+        if (document.getElementById('resumen-cd')) document.getElementById('resumen-cd').textContent = formatoM(data.Costo_Directo);
+        if (document.getElementById('resumen-ind')) document.getElementById('resumen-ind').textContent = formatoM(data.Indirectos);
+        if (document.getElementById('resumen-pct-ind')) document.getElementById('resumen-pct-ind').textContent = formatoP(data.Factores.Pct_Indirectos);
+
+        if (document.getElementById('resumen-fin')) document.getElementById('resumen-fin').textContent = formatoM(data.Financiamiento);
+        if (document.getElementById('resumen-pct-fin')) document.getElementById('resumen-pct-fin').textContent = formatoP(data.Factores.Pct_Financiamiento);
+
+        if (document.getElementById('resumen-util')) document.getElementById('resumen-util').textContent = formatoM(data.Utilidad);
+        if (document.getElementById('resumen-pct-util')) document.getElementById('resumen-pct-util').textContent = formatoP(data.Factores.Pct_Utilidad);
+
+        if (document.getElementById('resumen-cargos')) document.getElementById('resumen-cargos').textContent = formatoM(data.Cargos_Adicionales);
+        if (document.getElementById('resumen-pct-cargos')) document.getElementById('resumen-pct-cargos').textContent = formatoP(data.Factores.Pct_SFP);
+
+        if (document.getElementById('resumen-total')) document.getElementById('resumen-total').textContent = formatoM(data.Precio_Unitario_Total);
+
+        panel.classList.remove('hidden');
+    }
+
+    /**
+     * Recalcula montos y porcentajes en la fila del programa en tiempo real.
+     */
+    window.recalcularFilaPrograma = function (celda, tipo) {
+        const tr = celda.closest('tr');
+        const tdParent = celda.closest('td');
+        const idConcepto = tr.dataset.id;
+
+        // 1. Obtener el subtotal general del contrato (Catalog)
+        const subtotalContrato = (window.conceptosActuales || []).reduce((acc, c) => acc + (parseFloat(c.Importe_Total_Sin_IVA) || 0), 0) || 1;
+        const conceptoOrig = (window.conceptosActuales || []).find(c => String(c.ID_Concepto) === String(idConcepto));
+        if (!conceptoOrig) return;
+        const totalConcepto = parseFloat(conceptoOrig.Importe_Total_Sin_IVA) || 0;
+
+        let montoDiv = tdParent.querySelector('[data-tipo="monto"]');
+        let pctDiv = tdParent.querySelector('[data-tipo="pct"]');
+
+        if (tipo === 'monto') {
+            const valMonto = parseFloat(montoDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+            const nuevoPct = subtotalContrato > 0 ? (valMonto / subtotalContrato) : 0;
+            pctDiv.innerText = (nuevoPct * 100).toFixed(4) + '%';
+        } else {
+            const valPct = parseFloat(pctDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+            const nuevoMonto = subtotalContrato * (valPct / 100);
+            montoDiv.innerText = formatoMoneda(nuevoMonto).replace('$', '').trim();
+        }
+
+        // 2. Actualizar Total de Fila (Horizontal) e Indicador de Tope
+        let sumaFila = 0;
+        tr.querySelectorAll('[data-tipo="monto"]').forEach(d => {
+            sumaFila += parseFloat(d.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        });
+
+        const tdTotalFila = tr.querySelector('.col-total-fila div');
+        const indicator = tr.querySelector('.indicator-remanente');
+
+        if (tdTotalFila) {
+            tdTotalFila.innerText = formatoMoneda(sumaFila);
+            // Validación Visual de Tope
+            if (sumaFila > (totalConcepto + 0.01)) {
+                tdTotalFila.classList.add('text-red-600', 'animate-pulse');
+                tdTotalFila.classList.remove('text-slate-800');
+                if (indicator) {
+                    indicator.innerText = 'Exceso!';
+                    indicator.classList.add('text-red-500');
+                    indicator.classList.remove('text-slate-400');
+                }
+            } else {
+                tdTotalFila.classList.remove('text-red-600', 'animate-pulse');
+                tdTotalFila.classList.add('text-slate-800');
+                if (indicator) {
+                    if (sumaFila < (totalConcepto - 0.01)) {
+                        indicator.innerText = 'Falta: ' + formatoMoneda(totalConcepto - sumaFila);
+                        indicator.classList.remove('text-red-500');
+                        indicator.classList.add('text-slate-400');
+                    } else {
+                        indicator.innerText = 'Completo';
+                        indicator.classList.remove('text-red-500');
+                        indicator.classList.add('text-slate-400');
+                    }
+                }
+            }
+        }
+
+        // 3. Actualizar Totales Verticales y Gran Total
+        const tbody = document.getElementById('tabla-programa-body');
+        const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+        const meses = window.programaActual ? window.programaActual.meses : [];
+        const numCols = meses.length;
+        const totalesVerticales = new Array(numCols).fill(0);
+        let granTotalCalculado = 0;
+
+        rows.forEach(row => {
+            row.querySelectorAll('[data-tipo="monto"]').forEach((mCell, idxCol) => {
+                const val = parseFloat(mCell.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+                totalesVerticales[idxCol] += val;
+                granTotalCalculado += val;
+            });
+        });
+
+        // 4. Actualizar Filas de Resumen (4 filas al final del body)
+        const summaryRows = tbody.querySelectorAll('tr:not([data-id])');
+        // Identificar filas por su texto o orden (f1: Importes, f2: %, f3: Acumulado, f4: Avance)
+        const f1 = summaryRows[0];
+        const f2 = summaryRows[1];
+        const f3 = summaryRows[2];
+        const f4 = summaryRows[3];
+
+        let acumulado = 0;
+        totalesVerticales.forEach((tv, idx) => {
+            acumulado += tv;
+            // Update f1 (Importe) - cell index starts at 1 because of colspan=2
+            if (f1 && f1.cells[idx + 1]) f1.cells[idx + 1].innerText = formatoMoneda(tv);
+            // Update f2 (%)
+            if (f2 && f2.cells[idx + 1]) f2.cells[idx + 1].innerText = granTotalCalculado > 0 ? ((tv / granTotalCalculado) * 100).toFixed(4) + '%' : '0.0000%';
+            // Update f3 (Acumulado)
+            if (f3 && f3.cells[idx + 1]) f3.cells[idx + 1].innerText = formatoMoneda(acumulado);
+            // Update f4 (Avance %)
+            if (f4 && f4.cells[idx + 1]) f4.cells[idx + 1].innerText = granTotalCalculado > 0 ? ((acumulado / granTotalCalculado) * 100).toFixed(4) + '%' : '0.0000%';
+        });
+
+        // Update gran total cells in summary rows
+        if (f1 && f1.cells[numCols + 1]) f1.cells[numCols + 1].innerText = formatoMoneda(granTotalCalculado);
+        if (f3 && f3.cells[numCols + 1]) f3.cells[numCols + 1].innerText = formatoMoneda(granTotalCalculado);
+    }
+
+    /**
+     * Guarda el cambio de un periodo específico en el servidor.
+     */
+    window.autoGuardarPeriodo = function (celda) {
+        if (celda.innerText === celda.dataset.original) return; // No hubo cambio real
+
+        const tr = celda.closest('tr');
+        const tdParent = celda.closest('td');
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        const idConcepto = tr.dataset.id;
+        const idPrograma = window.programaActualId;
+        const idPeriodo = celda.dataset.idPeriodo;
+
+        const montoVal = parseFloat(tdParent.querySelector('[data-tipo="monto"]').innerText.replace(/[^0-9.-]+/g, "")) || 0;
+
+        tdParent.classList.add('bg-blue-50');
+        toggleSpinner(true, "Actualizando periodo...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                setTimeout(() => tdParent.classList.remove('bg-blue-50'), 400);
+                if (!res.success) {
+                    tdParent.classList.add('bg-red-50');
+                    setTimeout(() => tdParent.classList.remove('bg-red-50'), 2000);
+                    manejarError(res);
+                } else {
+                    // Re-formatear con precisión al éxito (blur)
+                    const mDiv = tdParent.querySelector('[data-tipo="monto"]');
+                    const pDiv = tdParent.querySelector('[data-tipo="pct"]');
+
+                    const valMonto = parseFloat(mDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+                    const valPct = parseFloat(pDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+
+                    mDiv.innerText = formatoMoneda(valMonto);
+                    pDiv.innerText = valPct.toFixed(4) + '%';
+
+                    mDiv.dataset.original = mDiv.innerText;
+                    pDiv.dataset.original = pDiv.innerText;
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                tdParent.classList.remove('bg-blue-50');
+                tdParent.classList.add('bg-red-50');
+                setTimeout(() => tdParent.classList.remove('bg-red-50'), 2000);
+                manejarError({ error: err.message, functionName: 'autoGuardarPeriodo' });
+            })
+            .actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo, montoVal);
+    }
+
+    /**
+     * Sincroniza y regenera la estructura de periodos si es necesario.
+     */
+    window.generarPeriodosPrograma = function () {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        toggleSpinner(true, "Sincronizando estructura de niveles...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res && res.success) {
+                    renderizarProgramaMatricial(res.data);
+                    notificarExito("Estructura de periodos sincronizada con éxito");
+                } else {
+                    manejarError(res || { success: false, error: "Respuesta nula del servidor", functionName: "generarPeriodosPrograma" });
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'generarPeriodosPrograma' });
+            })
+            .getProgramaEjecucion(idContrato);
+    }
+
+    /**
+     * Abre el modal de configuración de Niveles 1 y 2.
+     */
+    window.abrirModalConfigPrograma = function () {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        toggleSpinner(true, "Cargando configuración...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res && res.success) {
+                    const prog = res.data.programa;
+                    const pers = res.data.periodos;
+
+                    // Poblar Nivel 1
+                    if (prog) {
+                        const selectTipo = document.getElementById('config-prog-tipo');
+                        selectTipo.value = (prog.tipo_programa || "MENSUAL").toUpperCase();
+
+                        // Bloquear si tiene datos (Req. Usuario)
+                        if (res.data.hasData) {
+                            selectTipo.disabled = true;
+                            selectTipo.title = "No se puede cambiar el tipo de programa porque existen periodos con importes registrados.";
+                            selectTipo.classList.add('bg-slate-100', 'cursor-not-allowed', 'text-slate-400');
+                        } else {
+                            selectTipo.disabled = false;
+                            selectTipo.title = "";
+                            selectTipo.classList.remove('bg-slate-100', 'cursor-not-allowed', 'text-slate-400');
+                        }
+
+                        const fIni1 = (prog.Fecha_Inicio && String(prog.Fecha_Inicio).includes('T')) ? String(prog.Fecha_Inicio).split('T')[0] : (prog.Fecha_Inicio || '');
+                        const fFin1 = (prog.Fecha_Termino && String(prog.Fecha_Termino).includes('T')) ? String(prog.Fecha_Termino).split('T')[0] : (prog.Fecha_Termino || '');
+
+                        document.getElementById('config-prog-inicio').value = fIni1;
+                        document.getElementById('config-prog-fin').value = fFin1;
+                    }
+
+                    // Guardar el estado inicial para detectar cambios
+                    window._lastTipoPrograma = document.getElementById('config-prog-tipo').value;
+
+                    window.renderPeriodosModal(pers);
+                    document.getElementById('modal-config-programa').classList.remove('hidden');
+                } else {
+                    manejarError(res || { success: false, error: "Respuesta nula del servidor", functionName: "abrirModalConfigPrograma" });
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'abrirModalConfigPrograma' });
+            })
+            .getProgramaYPeriodos(idContrato);
+    }
+
+    window.cerrarModalConfigPrograma = function () {
+        document.getElementById('modal-config-programa').classList.add('hidden');
+    }
+
+    window.guardarCambiosEstructuraPrograma = function () {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        const config = {
+            programa: {
+                tipo: document.getElementById('config-prog-tipo').value,
+                fechaInicio: document.getElementById('config-prog-inicio').value,
+                fechaTermino: document.getElementById('config-prog-fin').value
+            },
+            periodos: []
+        };
+
+        const rows = document.querySelectorAll('[data-id-periodo-edit]');
+        rows.forEach(row => {
+            config.periodos.push({
+                idPeriodo: row.dataset.idPeriodoEdit,
+                label: row.querySelector('.input-periodo-label').value,
+                fechaInicio: row.querySelector('.input-periodo-inicio').value,
+                fechaTermino: row.querySelector('.input-periodo-fin').value
+            });
+        });
+
+        toggleSpinner(true, "Guardando estructura...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res && res.success) {
+                    cerrarModalConfigPrograma();
+                    notificarExito("Estructura guardada con éxito");
+                    generarPeriodosPrograma(); // Recargar matriz completa
+                } else {
+                    manejarError(res || { success: false, error: "Respuesta nula del servidor", functionName: "guardarCambiosEstructuraPrograma" });
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'guardarCambiosEstructuraPrograma' });
+            })
+            .guardarConfiguracionPrograma(idContrato, config);
+    }
+
+    /**
+     * Renderiza los periodos en el modal con lógica de bloqueo y cálculo.
+     */
+    window.renderPeriodosModal = function (pers) {
+        const container = document.getElementById('container-lista-periodos-edit');
+        document.getElementById('lbl-total-periodos').innerText = `${pers.length} Periodos`;
+
+        container.innerHTML = pers.map((p, idx) => {
+            const fIni = (p.Fecha_Inicio && String(p.Fecha_Inicio).includes('T')) ? String(p.Fecha_Inicio).split('T')[0] : (p.Fecha_Inicio || '');
+            const fFin = (p.Fecha_Termino && String(p.Fecha_Termino).includes('T')) ? String(p.Fecha_Termino).split('T')[0] : (p.Fecha_Termino || '');
+
+            // Bloquear fecha de inicio excepto para el primero (Continuidad estricta)
+            const isLocked = idx > 0;
+
+            return `
+            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${p.ID_Programa_Periodo}">
+                <div class="flex items-center space-x-3 min-w-[100px]">
+                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-xs font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${idx + 1}</span>
+                    <div class="text-sm font-black text-slate-500 uppercase tracking-tighter">P.${idx + 1}</div>
+                </div>
+                <div class="flex-1 w-full">
+                    <input type="text" value="${p.Periodo || ''}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
+                </div>
+                <div class="flex items-center space-x-2 w-full md:w-auto">
+                    <input type="date" value="${fIni}" ${isLocked ? 'readonly' : ''} onchange="recalcularContinuidadModal()"
+                        class="input-periodo-inicio ${isLocked ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                    <span class="text-slate-300 text-xs text-center w-4">➡</span>
+                    <input type="date" value="${fFin}" onchange="recalcularContinuidadModal()"
+                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                </div>
+                <button onclick="eliminarPeriodoModal('${p.ID_Programa_Periodo}')" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>`;
+        }).join('');
+    }
+
+    /**
+     * Recalcula las fechas de inicio basadas en la fecha de término del anterior.
+     */
+    window.recalcularContinuidadModal = function () {
+        const rows = document.querySelectorAll('[data-id-periodo-edit]');
+        for (let i = 1; i < rows.length; i++) {
+            const prevRow = rows[i - 1];
+            const currRow = rows[i];
+            const prevFin = prevRow.querySelector('.input-periodo-fin').value;
+
+            if (prevFin) {
+                const dateFin = new Date(prevFin + 'T00:00:00');
+                dateFin.setDate(dateFin.getDate() + 1);
+                currRow.querySelector('.input-periodo-inicio').value = dateFin.toISOString().split('T')[0];
+            }
+        }
+    }
+
+    /**
+     * Agrega un periodo vacío al final, respetando la continuidad.
+     */
+    window.agregarPeriodoManual = function () {
+        const container = document.getElementById('container-lista-periodos-edit');
+        const rows = document.querySelectorAll('[data-id-periodo-edit]');
+        const contractFinLimit = document.getElementById('config-prog-fin').value;
+
+        let startStr = "";
+        let endStr = "";
+
+        if (rows.length > 0) {
+            const lastRow = rows[rows.length - 1];
+            const lastFin = lastRow.querySelector('.input-periodo-fin').value;
+            if (lastFin) {
+                const d = new Date(lastFin + 'T00:00:00');
+                d.setDate(d.getDate() + 1);
+                startStr = d.toISOString().split('T')[0];
+
+                // Verificar si ya excedimos el límite del contrato
+                if (contractFinLimit && startStr > contractFinLimit) {
+                    alert("Ya se ha cubierto el tiempo total de ejecución del contrato.");
+                    return;
+                }
+
+                // Término por defecto +30 días o al límite
+                d.setDate(d.getDate() + 29);
+                endStr = d.toISOString().split('T')[0];
+                if (contractFinLimit && endStr > contractFinLimit) endStr = contractFinLimit;
+            }
+        }
+
+        const tempId = "new_" + Date.now();
+        const num = rows.length + 1;
+        const html = `
+            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${tempId}">
+                <div class="flex items-center space-x-3 min-w-[100px]">
+                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${num}</span>
+                    <div class="text-[11px] font-black text-slate-500 uppercase tracking-tighter">P.${num}</div>
+                </div>
+                <div class="flex-1 w-full">
+                    <input type="text" value="Periodo ${num}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
+                </div>
+                <div class="flex items-center space-x-2 w-full md:w-auto">
+                    <input type="date" value="${startStr}" ${num > 1 ? 'readonly' : ''} onchange="recalcularContinuidadModal()"
+                        class="input-periodo-inicio ${num > 1 ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                    <span class="text-slate-300 text-xs text-center w-4">➜</span>
+                    <input type="date" value="${endStr}" onchange="recalcularContinuidadModal()"
+                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                </div>
+                <button onclick="this.closest('[data-id-periodo-edit]').remove(); recalcularItemsModal();" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', html);
+        recalcularItemsModal();
+    }
+
+    window.recalcularItemsModal = function () {
+        const rows = document.querySelectorAll('[data-id-periodo-edit]');
+        document.getElementById('lbl-total-periodos').innerText = `${rows.length} Periodos`;
+        rows.forEach((row, idx) => {
+            const span = row.querySelector('span');
+            const divNum = row.querySelector('.text-[11px]');
+            if (span) span.innerText = idx + 1;
+            if (divNum) divNum.innerText = `P.${idx + 1}`;
+        });
+    }
+
+    /**
+     * Lógica de generación automática basada en el tipo de programa.
+     */
+    window.generarEstructuraAutomatica = function (forzando = false) {
+        const inputTipo = document.getElementById('config-prog-tipo');
+        let rawProp = inputTipo.value || 'MENSUAL';
+
+        // Mapeo interno para compatibilidad con la lógica previa
+        const freqMap = {
+            'MENSUAL': 'Mensual',
+            'QUINCENAL': 'Quincenal',
+            'SEMANAL': 'Semanal'
+        };
+        const freq = freqMap[rawProp] || 'Mensual';
+        const fIniStr = document.getElementById('config-prog-inicio').value;
+        const fFinStr = document.getElementById('config-prog-fin').value;
+
+        if (!fIniStr || !fFinStr) {
+            alert("Favor de definir fechas de inicio y término contractuales.");
+            return;
+        }
+
+        const targetStart = new Date(fIniStr + 'T00:00:00');
+        const targetEnd = new Date(fFinStr + 'T00:00:00');
+        const pers = [];
+        let curr = new Date(targetStart);
+        let count = 1;
+
+        while (curr <= targetEnd) {
+            let start = new Date(curr);
+            let end;
+
+            if (freq === 'Semanal') {
+                end = new Date(curr);
+                end.setDate(end.getDate() + 6);
+            } else if (freq === 'Quincenal') {
+                // Ciclos de 15 días: 1 al 15 y 16 al fin de mes (o similar)
+                // Regla estándar pedida: del 1 al 15, y del 16 al 30/31
+                if (curr.getDate() <= 15) {
+                    end = new Date(curr.getFullYear(), curr.getMonth(), 15);
+                } else {
+                    end = new Date(curr.getFullYear(), curr.getMonth() + 1, 0);
+                }
+            } else { // Mensual
+                // Inicia el X, termina el X-1 del siguiente mes
+                end = new Date(curr.getFullYear(), curr.getMonth() + 1, curr.getDate() - 1);
+            }
+
+            // Cap al final del contrato
+            if (end > targetEnd) end = new Date(targetEnd);
+
+            pers.push({
+                ID_Programa_Periodo: "auto_" + count,
+                Numero_Periodo: count,
+                Periodo: `Periodo ${count}`,
+                Fecha_Inicio: start.toISOString(),
+                Fecha_Termino: end.toISOString()
+            });
+
+            // Siguiente inicio = end + 1
+            curr = new Date(end);
+            curr.setDate(curr.getDate() + 1);
+            count++;
+
+            if (count > 200) break; // Safe break
+        }
+
+        window.renderPeriodosModal(pers);
+    }
+
+    window.eliminarPeriodoModal = function (idPeriodo) {
+        if (idPeriodo.startsWith('new_') || idPeriodo.startsWith('auto_')) {
+            document.querySelector(`[data-id-periodo-edit="${idPeriodo}"]`).remove();
+            recalcularItemsModal();
+            return;
+        }
+
+        if (!confirm("¿Seguro que deseas eliminar este periodo? Se verificará si tiene importes registrados.")) return;
+
+        toggleSpinner(true, "Verificando importes...");
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    document.querySelector(`[data-id-periodo-edit="${idPeriodo}"]`).remove();
+                    recalcularItemsModal();
+                    notificarExito(res.data);
+                } else {
+                    alert(res.error);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'eliminarPeriodo' });
+            })
+            .eliminarPeriodo(idPeriodo);
+    }
+
+    window.cerrarModalAdvertenciaIA = function () {
+        document.getElementById('modal-advertencia-ia').classList.add('hidden');
+    };
+
+    /**
+     * Detecta el cambio en el select de Tipo de Programa.
+     */
+    window.verificarCambioTipoPrograma = function () {
+        const select = document.getElementById('config-prog-tipo');
+        const rows = document.querySelectorAll('[data-id-periodo-edit]');
+
+        if (rows.length > 0) {
+            if (confirm("Has cambiado el tipo de programa. ¿Deseas autogenerar los periodos ahora? Esto reemplazará los periodos actuales.")) {
+                generarEstructuraAutomatica(true);
+            }
+        } else {
+            // Si está vacío, generar directo
+            generarEstructuraAutomatica(true);
+        }
+        window._lastTipoPrograma = select.value;
+    }
+
+    window.cerrarModalImportacionIA = function () {
+        document.getElementById('modal-importacion-ia').classList.add('hidden');
+        // Reset overlay when closing
+        updateAIStatus(false);
+    };
+
+    window.setImportType = function (tipo) {
+        document.getElementById('import-type-actual').value = tipo;
+        const btnContrato = document.getElementById('btn-import-type-contrato');
+        const btnMatriz = document.getElementById('btn-import-type-matriz');
+
+        if (tipo === 'Contratos') {
+            btnContrato.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
+            btnContrato.classList.remove('text-slate-500');
+            btnMatriz.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
+            btnMatriz.classList.add('text-slate-500');
+        } else {
+            btnMatriz.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
+            btnMatriz.classList.remove('text-slate-500');
+            btnContrato.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
+            btnContrato.classList.add('text-slate-500');
+        }
+    };
+
+    function updateAIStatus(show, message = "Procesando...", subtext = "Esto puede tomar unos segundos") {
+        const overlay = document.getElementById('ai-processing-overlay');
+        const msgEl = document.getElementById('ai-status-message');
+        const subEl = document.getElementById('ai-status-subtext');
+
+        if (overlay) {
+            if (show) {
+                overlay.classList.remove('hidden');
+                if (msgEl) msgEl.innerText = message;
+                if (subEl) subEl.innerText = subtext;
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+    }
+
+    /**
+     * Inicializa los eventos de Drag & Drop para el Importador IA.
+     */
+    function inicializarImportadorIA() {
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input-ia');
+
+        if (!dropZone) return;
+
+        // Abrir selector al hacer clic
+        dropZone.onclick = () => fileInput.click();
+
+        // Eventos de Arrastre
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        // Manejar Soltado
+        dropZone.addEventListener('drop', e => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFilesIA(files);
+        }, false);
+
+        // Manejar Selección por clic
+        fileInput.onchange = e => handleFilesIA(e.target.files);
+    }
+
+    function handleFilesIA(files) {
+        const file = files[0];
+        if (!file) return;
+
+        // Mantener modal abierto y mostrar status inicial
+        updateAIStatus(true, "Leyendo archivo...", "Preparando datos para el Agente IA");
+
+        const reader = new FileReader();
+        reader.onload = function (evt) {
+            const base64Data = evt.target.result;
+            const mimeType = file.type;
+            const targetTable = document.getElementById('import-type-actual').value;
+
+            updateAIStatus(true, "Analizando con Agente IA...", "Extrayendo datos estructurados del documento");
+
+            const parentContext = {
+                ID_Contrato: window.idContratoActual || null,
+                ID_Concepto: window.idConceptoMatrizActual || null
+            };
+
+            google.script.run
+                .withSuccessHandler(function (resIA) {
+                    if (resIA && resIA.success) {
+                        const datosExtraidos = resIA.data;
+                        updateAIStatus(true, "Sincronizando Catálogo...", "Haciendo match inteligente de conceptos por descripción");
+
+                        google.script.run
+                            .withSuccessHandler(function (resDiff) {
+                                if (resDiff && resDiff.success) {
+                                    const cambios = resDiff.data;
+                                    cerrarModalImportacionIA();
+
+                                    if (cambios.length > 0) {
+                                        mostrarAdvertenciaCambiosIA(cambios, datosExtraidos);
+                                    } else {
+                                        ejecutarGuardadoIA(datosExtraidos);
+                                    }
+                                } else {
+                                    updateAIStatus(true, "Error en comparativa", resDiff.error || "No se pudo analizar los cambios");
+                                    setTimeout(() => updateAIStatus(false), 3000);
+                                    manejarError(resDiff);
+                                }
+                            })
+                            .withFailureHandler(function (err) {
+                                updateAIStatus(true, "Error de red", err.message);
+                                setTimeout(() => updateAIStatus(false), 3000);
+                                manejarError({ error: err.message });
+                            })
+                            .analizarCambiosIA(datosExtraidos);
+                    } else {
+                        updateAIStatus(true, "Error en Agente IA", resIA?.error || "La IA no pudo procesar el archivo");
+                        setTimeout(() => updateAIStatus(false), 3000);
+                        manejarError(resIA || { success: false, error: "Error en el procesamiento IA", functionName: "processDocumentWithAI" });
+                    }
+                })
+                .withFailureHandler(function (err) {
+                    updateAIStatus(true, "Error de conexión", err.message);
+                    setTimeout(() => updateAIStatus(false), 3000);
+                    manejarError({ error: err.message, functionName: 'processDocumentWithAI' });
+                })
+                .processDocumentWithAI(base64Data, mimeType, targetTable, parentContext);
+        };
+        reader.onerror = function () {
+            updateAIStatus(true, "Error al leer archivo", "El navegador no pudo leer el archivo local");
+            setTimeout(() => updateAIStatus(false), 3000);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    /**
+     * Rebrandea el modal IA según el tipo de importación.
+     */
+    function configurarRebrandModalIA(tipo) {
+        const titulo = document.getElementById('modal-ia-titulo');
+        const subtitulo = document.getElementById('modal-ia-subtitulo');
+        const helpText = document.getElementById('drop-zone-help-text');
+        const iconContainer = document.getElementById('drop-zone-icon-container');
+        const hiddenInput = document.getElementById('import-type-actual');
+
+        if (!hiddenInput) return; // Guard
+        hiddenInput.value = tipo;
+
+        if (tipo === 'Contratos') {
+            titulo.innerText = "Importador de Contratos";
+            subtitulo.innerText = "Carga contratos o convenios modificatorios";
+            helpText.innerText = "Soporta PDF, Imagen y Excel de Contratos";
+            iconContainer.classList.remove('bg-purple-50', 'text-purple-500');
+            iconContainer.classList.add('bg-blue-50', 'text-blue-500');
+        } else if (tipo === 'Matriz_Insumos') {
+            titulo.innerText = "Importador de Matrices";
+            subtitulo.innerText = "Análisis de Precios Unitarios (Insumos)";
+            helpText.innerText = "Soporta documentos de Matrices (PDF, Imagen, Excel)";
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500');
+            iconContainer.classList.add('bg-purple-50', 'text-purple-500');
+        }
+    }
+
+    /**
+     * Abre el importador IA pre-configurado para Matrices de forma global.
+     */
+    window.abrirImportadorIAMatricesGlobal = function () {
+        window.idConceptoMatrizActual = null;
+        configurarRebrandModalIA('Matriz_Insumos');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    /**
+     * Abre el modal de importación por IA (Contratos).
+     */
+    window.abrirImportadorIA = function () {
+        window.idConceptoMatrizActual = null;
+        configurarRebrandModalIA('Contratos');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    /**
+     * Abre el importador IA para la matriz del concepto actual.
+     * Si no se pasa ID, usa el guardado en window.idConceptoMatrizActual.
+     */
+    window.abrirImportadorIAMatrizActual = function (id) {
+        if (id) window.idConceptoMatrizActual = id;
+        configurarRebrandModalIA('Matriz_Insumos');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    function mostrarAdvertenciaCambiosIA(cambios, datosCompletos) {
+        const listContainer = document.getElementById('lista-cambios-ia');
+        listContainer.innerHTML = '';
+
+        // Agrupar por numContrato
+        const grupos = {};
+        cambios.forEach((c, index) => {
+            if (!grupos[c.numContrato]) grupos[c.numContrato] = [];
+            c.id_interno = index; // Para rastrear el cambio
+            grupos[c.numContrato].push(c);
+        });
+
+        Object.keys(grupos).forEach(num => {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'bg-slate-50/50 rounded-2xl p-5 border border-slate-100 mb-6 shadow-sm';
+
+            const itemsHtml = grupos[num].map(c => {
+                const isVal = c.tipo === "VALIDACION";
+                const bgColor = isVal ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-200';
+                const labelColor = isVal ? 'text-amber-600' : 'text-slate-500';
+                const textColor = isVal ? 'text-amber-900 font-black' : 'text-slate-700';
+
+                return `
+                    <div class="${bgColor} border rounded-xl p-4 transition-all hover:shadow-md mb-3" id="change-item-${c.id_interno}">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs font-black uppercase tracking-widest ${labelColor}">${c.campo.replace(/_/g, ' ')}</span>
+                                ${isVal ? '<span class="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">ERROR DE VALIDACIÓN</span>' : ''}
+                            </div>
+                            <!-- Botón de Acción Individual -->
+                            <div class="flex items-center space-x-2">
+                                <label class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" checked data-index="${c.id_interno}" class="sr-only peer input-cambio-ia">
+                                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 relative transition-all"></div>
+                                    <span class="ml-2 text-xs font-bold text-slate-400 peer-checked:text-blue-600">Aplicar</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-11 gap-3 text-sm items-center">
+                            <div class="col-span-5 bg-red-50/50 text-red-600 p-2 rounded-lg border border-red-50 italic truncate" title="${c.valorActual}">
+                                <span class="block text-xs uppercase font-bold opacity-50 mb-0.5">DB Actual</span>
+                                ${c.valorActual || '(Vacío)'}
+                            </div>
+                            <div class="col-span-1 text-center text-slate-300">
+                                <svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                            </div>
+                            <div class="col-span-5 bg-green-50/50 text-green-700 p-2 rounded-lg border border-green-50 font-black truncate" title="${c.valorIA}">
+                                <span class="block text-xs uppercase font-bold opacity-50 mb-0.5">Sugerido IA</span>
+                                ${c.valorIA}
+                            </div>
+                        </div>
+                        ${c.nota ? `<p class="mt-2 text-xs text-amber-600 font-medium italic flex items-center"><svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>${c.nota}</p>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            groupDiv.innerHTML = `
+                <div class="flex items-center justify-between mb-4 px-1">
+                    <h4 class="text-sm font-black text-slate-800 flex items-center">
+                        <span class="w-2.5 h-2.5 bg-amber-500 rounded-full mr-2.5 shadow-sm shadow-amber-200"></span>
+                        REFERENCIA: <span class="ml-2 text-blue-600">${num}</span>
+                    </h4>
+                    <span class="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">${grupos[num].length} hallazgos</span>
+                </div>
+                <div class="space-y-1">
+                    ${itemsHtml}
+                </div>
+            `;
+            listContainer.appendChild(groupDiv);
+        });
+
+        const btnConfirm = document.getElementById('btn-confirmar-cambios-ia');
+        btnConfirm.onclick = function () {
+            // Filtrar cambios aceptados
+            const inputs = document.querySelectorAll('.input-cambio-ia');
+            const idsAceptados = Array.from(inputs).filter(i => i.checked).map(i => parseInt(i.dataset.index));
+
+            // Re-procesar datosCompletos para descartar lo NO seleccionado
+            const cambiosRechazados = cambios.filter(c => !idsAceptados.includes(c.id_interno));
+
+            // Si hay cambios rechazados, restaurar los valores originales en datosCompletos
+            cambiosRechazados.forEach(c => {
+                const registroIA = datosCompletos[c.tabla].find(r =>
+                    (c.tabla === 'Catalogo_Conceptos' && r.Clave === c.numContrato) ||
+                    (r.Numero_Contrato === c.numContrato) ||
+                    (r.Numero_Acuerdo === c.numContrato)
+                );
+                if (registroIA) {
+                    // Restaurar el valor de la DB (ignoramos la sugerencia de la IA)
+                    // Nota: Si el valor original era (Vacío), lo ponemos como null
+                    registroIA[c.campo] = (c.valorActual === "(Vacío)") ? null : c.valorActual;
+                }
+            });
+
+            cerrarModalAdvertenciaIA();
+            ejecutarGuardadoIA(datosCompletos);
+        };
+
+        document.getElementById('modal-advertencia-ia').classList.remove('hidden');
+    }
+
+    function ejecutarGuardadoIA(datos) {
+        // Inyectar contexto de contrato si estamos en detalle
+        if (window.idContratoActual) {
+            datos.ID_Contrato_Contexto = window.idContratoActual;
+        }
+
+        // Si el modal de importación sigue abierto, actualizar status allí
+        const modalIA = document.getElementById('modal-importacion-ia');
+        if (modalIA && !modalIA.classList.contains('hidden')) {
+            updateAIStatus(true, "Guardando Datos...", "Sincronizando Catálogo y Matrices con la base de datos");
+        } else {
+            toggleSpinner(true, "Guardando información en la base de datos...");
+        }
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res && res.success) {
+                    if (modalIA && !modalIA.classList.contains('hidden')) {
+                        updateAIStatus(true, "¡Éxito!", "Importación completada correctamente");
+                        setTimeout(() => cerrarModalImportacionIA(), 2000);
+                    } else {
+                        notificarExito("Importación exitosa.");
+                    }
+
+                    // Notificar resumen
+                    const msg = `IA: ${res.message}\n\nEfectuados: ${res.detalles.insertados} inserciones y ${res.detalles.actualizados} actualizaciones.`;
+                    Swal.fire({
+                        title: 'Procesamiento IA Finalizado',
+                        text: msg,
+                        icon: 'success',
+                        confirmButtonColor: '#2563eb'
+                    });
+
+                    if (typeof inicializarContratos === 'function') inicializarContratos();
+                    // Si estamos en detalle de contrato, recargar los conceptos
+                    const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+                    if (idContrato && window.view_active === 'contrato_detalle.vw') {
+                        renderizarContratoDetalle(idContrato);
+                    }
+                } else {
+                    manejarError(res || { success: false, error: "Error en el guardado IA", functionName: "guardarDatosIA" });
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'guardarDatosIA' });
+            })
+            .guardarDatosIA(datos);
+    }
+    /**
+     * Abre el modal de drill-down para ver los insumos de un concepto.
+     */
+    window.abrirDrillDownMatriz = function (idConcepto) {
+        if (!idConcepto) return;
+
+        // 1. Guardar ID de concepto actual para uso posterior (Importación IA contextual)
+        window.idConceptoMatrizActual = idConcepto;
+
+        // 2. Mostrar modal y cargando
+        const modal = document.getElementById('modal-drilldown-matriz');
+        modal.classList.remove('hidden');
+        document.getElementById('tabla-matriz-body').innerHTML = `<tr><td colspan="7" class="px-5 py-8 text-sm text-center text-slate-500 italic animate-pulse">Consultando análisis de insumos...</td></tr>`;
+
+        // 3. Obtener datos del concepto desde window.contratoActual (ya cargado en vista detalle)
+        // O buscarlo en la lista si es necesario. Como estamos en la pestaña catálogo, 
+        // google.script.run ya nos dio los conceptos.
+        // Pero para ser más seguros, buscaremos la fila en el DOM o recargaremos.
+
+        // Buscamos el concepto en la data que tenemos (necesitamos los conceptos que se renderizaron)
+        // Como renderizarConceptos no guarda la data en global, vamos a buscarla.
+        // NOTA: Sería mejor que renderizarConceptos guardara window.conceptosActuales.
+
+        google.script.run
+            .withSuccessHandler(function (response) {
+                if (response.success) {
+                    renderizarMatrizInsumos(response.data);
+                } else {
+                    manejarError(response);
+                }
+            })
+            .getMatrizConcepto(idConcepto);
+
+        // 4. Actualizar cabecera del modal con info del concepto
+        const fila = document.querySelector(`tr[data-id="${idConcepto}"]`);
+        if (fila) {
+            const clave = fila.cells[0].innerText;
+            const desc = fila.cells[1].innerText;
+            const cdVal = fila.querySelector('.col-precio').innerText;
+            // Ojo: En el catálogo guardamos el PU en col-precio, pero el usuario pidió CD.
+            // En nuestra tabla Catalogo_Conceptos tenemos Costo_Directo.
+
+            document.getElementById('txt-matriz-titulo').innerText = `Matriz: ${clave}`;
+            document.getElementById('txt-matriz-subtitulo').innerText = desc;
+        }
+    };
+
+    window.cerrarDrillDownMatriz = function () {
+        document.getElementById('modal-drilldown-matriz').classList.add('hidden');
+        window.idConceptoMatrizActual = null;
+    };
+
+    /**
+     * Renderiza los insumos en la tabla del modal agrupados y con pie de sobrecostos.
+     */
+    function renderizarMatrizInsumos(data) {
+        const tbody = document.getElementById('tabla-matriz-body');
+        const countLbl = document.getElementById('txt-matriz-count');
+        const cdLbl = document.getElementById('txt-matriz-cd');
+        const puLbl = document.getElementById('txt-matriz-pu');
+        const fsLbl = document.getElementById('txt-matriz-fs');
+
+        const insumos = data.insumos || [];
+        const contrato = data.contrato || {};
+
+        if (!insumos || insumos.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-8 text-sm text-center text-slate-400 italic">No hay insumos registrados para este concepto. Utiliza el importador IA para cargar la matriz.</td></tr>`;
+            countLbl.innerText = "0";
+            return;
+        }
+
+        countLbl.innerText = insumos.length;
+        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
+        // --- AGRUPACIÓN ---
+        const grupos = {
+            1: { nombre: 'MATERIALES', icon: '📦', color: 'blue', items: [], total: 0 },
+            2: { nombre: 'MANO DE OBRA', icon: '👷', color: 'amber', items: [], total: 0 },
+            3: { nombre: 'MAQUINARIA Y EQUIPO', icon: '🚜', color: 'purple', items: [], total: 0 },
+            4: { nombre: 'HERRAMIENTA Y OTROS', icon: '🛠️', color: 'emerald', items: [], total: 0 }
+        };
+
+        insumos.forEach(ins => {
+            const t = parseInt(ins.Tipo_Insumo) || 1;
+            const target = grupos[t] || grupos[4];
+            target.items.push(ins);
+            target.total += (parseFloat(ins.Importe) || 0);
+        });
+
+        let totalDirecto = 0;
+        let html = '';
+
+        Object.keys(grupos).forEach(k => {
+            const g = grupos[k];
+            if (g.items.length === 0) return;
+
+            totalDirecto += g.total;
+            const idGrupo = `grupo-matriz-${k}`;
+
+            // Header del Grupo
+            html += `
+                <tr class="bg-slate-50 cursor-pointer group hover:bg-slate-100 transition-colors" onclick="toggleGrupoMatriz('${idGrupo}')">
+                    <td colspan="6" class="px-4 py-2 text-xs font-black text-slate-500 uppercase tracking-widest">
+                        <div class="flex items-center">
+                            <span class="mr-2 transform transition-transform group-collapsed:rotate-0 rotate-90" id="icon-${idGrupo}">▼</span>
+                            <span>${g.icon} ${g.nombre}</span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-2 text-right text-xs font-black text-slate-700 bg-slate-100/50">${formatM(g.total)}</td>
+                </tr>
+            `;
+
+            // Filas del Grupo
+            g.items.forEach(ins => {
+                html += `
+                    <tr class="${idGrupo} hover:bg-blue-50/30 border-b border-slate-100 transition-colors">
+                        <td class="px-4 py-2.5">
+                            <span class="px-2 py-0.5 rounded text-xs font-black uppercase tracking-tighter ${getClaseTipoInsumo(ins.Tipo_Insumo)}">${ins.Tipo_Insumo || 'INSUMO'}</span>
+                        </td>
+                        <td class="px-4 py-2.5 text-sm font-bold text-slate-700">${ins.Clave_Insumo || '-'}</td>
+                        <td class="px-4 py-2.5 text-sm text-slate-600 leading-tight">${ins.Descripcion || ''}</td>
+                        <td class="px-4 py-2.5 text-sm text-center text-slate-500 font-medium">${ins.Unidad || ''}</td>
+                        <td class="px-4 py-2.5 text-sm text-right font-mono text-slate-600">${parseFloat(ins.Rendimiento_Cantidad || 0).toFixed(6)}</td>
+                        <td class="px-4 py-2.5 text-sm text-right font-mono text-slate-600">${formatM(ins.Costo_Unitario)}</td>
+                        <td class="px-4 py-2.5 text-sm text-right font-mono font-black text-slate-700">${formatM(ins.Importe)}</td>
+                    </tr>
+                `;
+            });
+        });
+
+        // --- FOOTER DE SOBRECOSTOS ---
+        const cd = totalDirecto;
+
+        // El total es el prioritario/obligatorio según el usuario
+        let pctIndTotal = parseFloat(contrato.Pct_Indirectos_Totales) || 0;
+        const ci_of = (parseFloat(contrato.Pct_Indirectos_Oficina) || 0) / 100;
+        const ci_ca = (parseFloat(contrato.Pct_Indirectos_Campo) || 0) / 100;
+
+        // Si el total no está definido en el contrato, usamos la suma de oficina + campo
+        if (pctIndTotal === 0) {
+            pctIndTotal = (ci_of + ci_ca) * 100;
+        }
+
+        const pct_ind_calc = pctIndTotal / 100;
+        const cf_pct = (parseFloat(contrato.Pct_Financiamiento) || 0) / 100;
+        const cu_pct = (parseFloat(contrato.Pct_Utilidad) || 0) / 100;
+        const isn_pct = (parseFloat(contrato.Pct_ISN) || 0) / 100;
+        const sfp_pct = 0.005025; // Equivale al 5 al millar (0.5% / 0.995)
+
+        const m_ci_total = cd * pct_ind_calc;
+        const sub1 = cd + m_ci_total;
+
+        const m_cf = sub1 * cf_pct;
+        const sub2 = sub1 + m_cf;
+
+        const m_cu = sub2 * cu_pct;
+        const sub3 = sub2 + m_cu;
+
+        const m_sfp = sub3 * sfp_pct;
+        const m_isn = cd * isn_pct;
+        const pu_final = sub3 + m_sfp + m_isn;
+
+        html += `
+            <tr class="bg-slate-900 text-white font-black">
+                <td colspan="6" class="px-4 py-4 text-right uppercase tracking-[0.2em] text-xs">Costo Directo Total (CD)</td>
+                <td class="px-4 py-4 text-right font-mono text-sm">${formatM(cd)}</td>
+            </tr>
+            <tr class="bg-slate-50 text-slate-600 border-t-2 border-slate-200">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Costos Indirectos Totales (${pctIndTotal.toFixed(2)}%)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_ci_total)}</td>
+            </tr>
+            <tr class="bg-slate-100 text-slate-700">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (CD + Indirectos)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub1)}</td>
+            </tr>
+            <tr class="bg-white text-slate-600">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Costo Financiero (${(cf_pct * 100).toFixed(4)}%)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_cf)}</td>
+            </tr>
+            <tr class="bg-slate-100 text-slate-700">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (Financiamiento)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub2)}</td>
+            </tr>
+            <tr class="bg-white text-slate-600">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Utilidad (${(cu_pct * 100).toFixed(2)}%)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_cu)}</td>
+            </tr>
+            <tr class="bg-slate-100 text-slate-700">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (Utilidad)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub3)}</td>
+            </tr>
+            <tr class="bg-amber-50 text-amber-900">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase italic">Cargos Adicionales (5 al Millar / SFUPU)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_sfp)}</td>
+            </tr>
+            <tr class="bg-amber-50 text-amber-900 border-b-2 border-white">
+                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase italic">Impuesto sobre Nómina (${(isn_pct * 100).toFixed(2)}%)</td>
+                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_isn)}</td>
+            </tr>
+            <tr class="bg-blue-600 text-white font-black">
+                <td colspan="6" class="px-4 py-5 text-right uppercase tracking-[0.3em] text-xs">Precio Unitario Final (Total de Matriz)</td>
+                <td class="px-4 py-5 text-right font-mono text-base underline decoration-double">${formatM(pu_final)}</td>
+            </tr>
+        `;
+
+        tbody.innerHTML = html;
+        cdLbl.innerText = formatM(totalDirecto);
+
+        // Calcular Factor de Sobrecosto Total
+        if (totalDirecto > 0) {
+            fsLbl.innerText = (pu_final / totalDirecto).toFixed(4);
+        } else {
+            fsLbl.innerText = "1.0000";
+        }
+
+        puLbl.innerText = formatM(pu_final);
+    }
+
+    /**
+     * Permite colapsar/expandir grupos de la matriz.
+     */
+    window.toggleGrupoMatriz = function (idGrupo) {
+        const rows = document.querySelectorAll(`.${idGrupo}`);
+        const icon = document.getElementById(`icon-${idGrupo}`);
+
+        rows.forEach(row => {
+            row.classList.toggle('hidden');
+        });
+
+        if (icon) {
+            icon.style.transform = icon.style.transform === 'rotate(90deg)' ? 'rotate(0deg)' : 'rotate(90deg)';
+        }
+    };
+
+    function getClaseTipoInsumo(tipo) {
+        const t = String(tipo || '').toUpperCase();
+        if (t === '1' || t.includes('MATERIAL')) return 'bg-blue-50 text-blue-600 border border-blue-100';
+        if (t === '2' || t.includes('MANO')) return 'bg-amber-50 text-amber-600 border border-amber-100';
+        if (t === '3' || t.includes('EQUIPO')) return 'bg-purple-50 text-purple-600 border border-purple-100';
+        if (t.includes('HERRAMIENTA')) return 'bg-emerald-50 text-emerald-600 border border-emerald-100';
+        return 'bg-slate-50 text-slate-500 border border-slate-100';
+    }
+
+    /**
+     * Llama al importador IA pero con el contexto del concepto actual pre-seleccionado.
+     */
+    window.abrirImportadorIAMatrizActual = function () {
+        // 1. Configurar tipo de importación
+        setImportType('Matriz_Insumos');
+
+        // 2. Abrir el modal general de IA
+        abrirImportadorIA();
+
+        // 3. Opcional: Cerrar el modal de drill-down para no encimar (o dejarlo de fondo)
+        // cerrarDrillDownMatriz();
+    };
+
+    // --- MÓDULO DE ESTIMACIONES ---
+
+    /**
+     * Carga el historial de estimaciones del contrato actual.
+     */
+    window.cargarEstimacionesContrato = function () {
+        const container = document.getElementById('container-lista-estimaciones');
+        if (!container) return;
+        container.innerHTML = `<div class="col-span-full py-20 text-center text-slate-400 italic animate-pulse">Sincronizando estado financiero...</div>`;
+
+        google.script.run
+            .withSuccessHandler(function (response) {
+                if (response.success) {
+                    renderizarListaEstimaciones(response.data);
+
+                    // Calcular KPIs de la pestaña
+                    const totalContrato = window.contratoActual ? parseFloat(window.contratoActual.Monto_Total_Sin_IVA) || 0 : 0;
+                    const acumuladoSinIva = response.data.reduce((acc, est) => acc + (parseFloat(est.Monto_Sin_IVA) || 0), 0);
+                    const avancePct = totalContrato > 0 ? (acumuladoSinIva / totalContrato) * 100 : 0;
+                    const saldo = totalContrato - acumuladoSinIva;
+
+                    const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
+                    if (document.getElementById('lbl-total-estimado-kpi')) document.getElementById('lbl-total-estimado-kpi').innerText = formatM(acumuladoSinIva);
+                    if (document.getElementById('lbl-avance-real-kpi')) document.getElementById('lbl-avance-real-kpi').innerText = avancePct.toFixed(2) + '%';
+                    if (document.getElementById('lbl-saldo-estimar-kpi')) document.getElementById('lbl-saldo-estimar-kpi').innerText = formatM(saldo);
+
+                } else {
+                    manejarError(response);
+                }
+            })
+            .getEstimacionesContrato(window.idContratoActual);
+    };
+
+    /**
+     * Renderiza las tarjetas de estimaciones en el grid.
+     */
+    function renderizarListaEstimaciones(estimaciones) {
+        const container = document.getElementById('container-lista-estimaciones');
+        if (!estimaciones || estimaciones.length === 0) {
+            container.innerHTML = `
+                <div class="col-span-full py-24 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
+                    <div class="p-6 bg-white rounded-full shadow-inner mb-6">
+                        <svg class="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                    </div>
+                    <p class="font-black uppercase tracking-[0.3em] text-[10px] text-slate-300">Expediente Vacío</p>
+                    <p class="text-sm mt-2 font-medium">No se han registrado estimaciones para este contrato aún.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
+        container.innerHTML = estimaciones.map(est => {
+            const isValidated = est.Estado_Validacion === 'VALIDADA';
+            const statusClass = isValidated ? 'bg-inst-oro text-inst-vino' : 'bg-amber-500 text-white';
+            const borderColor = isValidated ? 'border-inst-oro/30' : 'border-amber-100';
+
+            return `
+                <div class="bg-white p-8 rounded-[2.5rem] border ${borderColor} shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all cursor-pointer group relative overflow-hidden"
+                    onclick="verDetalleEstimacion(${est.ID_Estimacion})">
+                    <!-- Decoración Lateral -->
+                    <div class="absolute top-0 left-0 w-2 h-full ${isValidated ? 'bg-inst-oro' : 'bg-amber-500'}"></div>
+                    
+                    <div class="flex justify-between items-start mb-8">
+                        <div>
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Folio Oficial</span>
+                            <div class="bg-inst-vino text-white px-4 py-2 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shadow-inst-vino/20">
+                                ${est.No_Estimacion}
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Estado de Pago</span>
+                            <span class="text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${statusClass} shadow-md">
+                                ${est.Estado_Validacion || 'BORRADOR'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Periodo de Ejecución</p>
+                            <div class="flex items-center text-slate-600">
+                                <svg class="w-3.5 h-3.5 mr-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z"></path></svg>
+                                <p class="text-xs font-bold font-sans">${est.Periodo_Inicio} al ${est.Periodo_Fin}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="pt-6 border-t border-slate-50 flex justify-between items-end">
+                            <div>
+                                <p class="text-[9px] font-black text-inst-vino/40 uppercase tracking-widest mb-1">Alcance Líquido</p>
+                                <p class="text-xl font-black text-inst-vino font-sans tracking-tighter">${formatM(est.Monto_Neto_A_Pagar)}</p>
+                            </div>
+                            <div class="h-10 w-10 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 group-hover:bg-inst-vino group-hover:text-white transition-all shadow-inner">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Inicia la generación de la siguiente estimación.
+     */
+    window.generarProximaEstimacionUI = function () {
+        Swal.fire({
+            title: '¿Generar nueva estimación?',
+            text: "El sistema identificará el siguiente periodo programado y creará el borrador.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Sí, generar',
+            cancelButtonText: 'Cancelar',
+            customClass: { popup: 'rounded-[2rem]' }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                toggleSpinner(true, "Construyendo carátula...");
+                google.script.run
+                    .withSuccessHandler(function (response) {
+                        toggleSpinner(false);
+                        if (response.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Estimación Generada',
+                                text: response.message,
+                                timer: 2000,
+                                showConfirmButton: false,
+                                customClass: { popup: 'rounded-[2rem]' }
+                            });
+                            cargarEstimacionesContrato();
+                            verDetalleEstimacion(response.data.id);
+                        } else {
+                            manejarError(response);
+                        }
+                    })
+                    .generarProximaEstimacion(window.idContratoActual);
+            }
+        });
+    };
+
+    /**
+     * Consulta el detalle completo de una estimación y muestra la carátula.
+     */
+    window.verDetalleEstimacion = function (id) {
+        if (!id) return;
+        toggleSpinner(true, "Recuperando carátula oficial...");
+        google.script.run
+            .withSuccessHandler(function (response) {
+                toggleSpinner(false);
+                if (response.success) {
+                    renderizarDetalleEstimacion(response.data);
+                } else {
+                    manejarError(response);
+                }
+            })
+            .getDetalleEstimacion(id);
+    };
+
+    /**
+     * Renderiza la carátula y la tabla de conceptos ejecutados.
+     */
+    function renderizarDetalleEstimacion(data) {
+        const est = data.estimacion;
+        const cont = data.contrato;
+        const conceptos = data.conceptos || [];
+
+        window.idEstimacionActual = est.ID_Estimacion;
+        window.montoTotalContratoActual = parseFloat(cont.Monto_Total_Sin_IVA) || 1;
+
+        // 1. Mostrar contenedor y ocultar lista
+        document.getElementById('container-lista-estimaciones').classList.add('hidden');
+        document.getElementById('container-detalle-estimacion').classList.remove('hidden');
+
+        // 2. Cabecera Carátula
+        document.getElementById('lbl-detalle-no-est').innerText = est.No_Estimacion;
+        document.getElementById('lbl-detalle-periodo-texto').innerText = `Periodo: ${est.Periodo_Inicio} al ${est.Periodo_Fin}`;
+
+        // 3. Datos Oficiales
+        document.getElementById('lbl-caratula-num-contrato').innerText = cont.Numero_Contrato || '---';
+        document.getElementById('lbl-caratula-contratista').innerText = cont.Nombre_Contratista || '---';
+        document.getElementById('lbl-caratula-objeto').innerText = cont.Objeto_Contrato || '---';
+
+        // 4. Tabla de Conceptos
+        renderizarTablaConceptosEstimacion(conceptos);
+
+        // 5. Totales
+        recalcularTotalesCaratula();
+
+        // 6. Reset estado del botón de guardado
+        const btnGuardar = document.getElementById('btn-guardar-detalles-estimacion');
+        if (btnGuardar) btnGuardar.disabled = true;
+    }
+
+    /**
+     * Renderiza las filas de conceptos para captura de cantidades.
+     */
+    function renderizarTablaConceptosEstimacion(conceptos) {
+        const tbody = document.getElementById('tabla-detalle-estimacion-body');
+        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
+        if (conceptos.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-20 text-center"><div class="flex flex-col items-center justify-center space-y-4 text-slate-300"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><p class="text-xs font-black uppercase tracking-widest">No hay conceptos vinculados</p></div></td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = conceptos.map(c => {
+            const cant = parseFloat(c.Cantidad_Estimada_Periodo) || 0;
+            const pu = parseFloat(c.Precio_Unitario_Contrato) || 0;
+            const importe = cant * pu;
+
+            return `
+                <tr class="group hover:bg-inst-crema/10 transition-all border-b border-slate-50" data-id-concepto="${c.ID_Concepto}">
+                    <td class="px-6 py-5">
+                        <div class="text-[10px] font-black text-inst-vino uppercase tracking-tighter">${c.Clave}</div>
+                    </td>
+                    <td class="px-6 py-5">
+                        <div class="text-[13px] text-slate-600 font-medium leading-tight max-w-sm" title="${c.Descripcion}">${c.Descripcion}</div>
+                    </td>
+                    <td class="px-6 py-5 text-center">
+                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.Unidad}</span>
+                    </td>
+                    <td class="px-6 py-5 text-right font-sans text-xs font-bold text-slate-500">${formatM(pu)}</td>
+                    <td class="px-6 py-2 text-right">
+                        <input type="number" step="any" value="${cant}" data-original="${cant}"
+                            onchange="recalcularTotalesCaratula()"
+                            oninput="verificarCambiosEstimacion()"
+                            data-pu="${pu}"
+                            data-total-concepto="${c.Importe_Total_Sin_IVA}"
+                            class="input-cantidad-est w-28 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-right text-sm font-black text-inst-vino focus:ring-4 focus:ring-inst-oro/20 focus:border-inst-oro outline-none transition-all shadow-sm">
+                    </td>
+                    <td class="px-6 py-5 text-right font-sans text-sm font-black text-inst-vino bg-slate-50/30 val-importe-est">${formatM(importe)}</td>
+                    <td class="px-6 py-5 text-right">
+                        <div class="text-[11px] font-black text-inst-oro italic tracking-tighter val-pct-periodo-est">${((parseFloat(c.Avance_Periodo_Porcentaje) || 0) * 100).toFixed(4)}%</div>
+                    </td>
+                    <td class="px-6 py-5 text-right">
+                         <div class="text-[11px] font-black text-slate-400 tracking-tighter val-pct-acumulado-est">${((parseFloat(c.Avance_Acumulado_Porcentaje) || 0) * 100).toFixed(4)}%</div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Calcula los montos de la carátula en tiempo real basado en los inputs.
+     */
+    window.recalcularTotalesCaratula = function () {
+        const inputs = document.querySelectorAll('.input-cantidad-est');
+        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
+        let totalBrutoActual = 0;
+        const montoTotalC = window.montoTotalContratoActual || 1;
+
+        inputs.forEach(input => {
+            const cant = parseFloat(input.value) || 0;
+            const pu = parseFloat(input.dataset.pu) || 0;
+            const importe = cant * pu;
+            totalBrutoActual += importe;
+
+            const tr = input.closest('tr');
+            tr.querySelector('.val-importe-est').innerText = formatM(importe);
+
+            // Recalcular % del periodo del concepto (Relativo al TOTAL del contrato)
+            const pctP = (importe / montoTotalC) * 100;
+            tr.querySelector('.val-pct-periodo-est').innerText = pctP.toFixed(4) + '%';
+        });
+
+        const iva = totalBrutoActual * 0.16;
+        const totalConIva = totalBrutoActual + iva;
+        const sfp = totalBrutoActual * 0.005;
+        const alcanceLiquido = totalConIva - sfp;
+
+        // Porcentajes Globales
+        const pctActual = (totalBrutoActual / montoTotalC) * 100;
+
+        // Actualizar UI Carátula
+        document.getElementById('lbl-caratula-bruto').innerText = formatM(totalBrutoActual);
+        document.getElementById('val-caratula-bruto').innerText = formatM(totalBrutoActual);
+        document.getElementById('val-caratula-iva').innerText = formatM(iva);
+        document.getElementById('val-caratula-sfp').innerText = formatM(sfp);
+        document.getElementById('val-caratula-neto').innerText = formatM(alcanceLiquido);
+        document.getElementById('lbl-total-detalle-sin-iva').innerText = formatM(totalBrutoActual);
+
+        document.getElementById('lbl-caratula-pct-avance').innerText = pctActual.toFixed(2) + '%';
+        document.getElementById('bar-caratula-avance').style.width = pctActual.toFixed(2) + '%';
+    };
+
+    /**
+     * Verifica si hay algún cambio en las cantidades para activar el botón Guardar.
+     */
+    window.verificarCambiosEstimacion = function () {
+        const inputs = document.querySelectorAll('.input-cantidad-est');
+        const btnGuardar = document.getElementById('btn-guardar-detalles-estimacion');
+        let hayCambios = false;
+
+        inputs.forEach(input => {
+            const orgVal = parseFloat(input.dataset.original) || 0;
+            const curVal = parseFloat(input.value) || 0;
+            if (Math.abs(orgVal - curVal) > 0.0001) {
+                hayCambios = true;
+            }
+        });
+
+        if (btnGuardar) {
+            btnGuardar.disabled = !hayCambios;
+        }
+    };
+
+    /**
+     * Vuelve a la lista de estimaciones.
+     */
+    window.cerrarDetalleEstimacion = function () {
+        document.getElementById('container-detalle-estimacion').classList.add('hidden');
+        document.getElementById('container-lista-estimaciones').classList.remove('hidden');
+        window.idEstimacionActual = null;
+    };
+
+    /**
+     * Envía los datos capturados al servidor para persistencia.
+     */
+    window.guardarDetalleEstimacion = function () {
+        if (!window.idEstimacionActual) return;
+
+        const inputs = document.querySelectorAll('.input-cantidad-est');
+        const items = [];
+
+        inputs.forEach(input => {
+            items.push({
+                ID_Concepto: input.closest('tr').dataset.idConcepto,
+                Cantidad_Estimada_Periodo: parseFloat(input.value) || 0
+            });
+        });
+
+        toggleSpinner(true, "Guardando avances y calculando retenciones...");
+
+        google.script.run
+            .withSuccessHandler(function (response) {
+                toggleSpinner(false);
+                if (response.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Estimación Guardada',
+                        text: 'Los avances y deducciones se han registrado exitosamente.',
+                        confirmButtonColor: '#059669',
+                        customClass: { popup: 'rounded-[2rem]' }
+                    });
+                    cargarEstimacionesContrato();
+                    cerrarDetalleEstimacion();
+                } else {
+                    manejarError(response);
+                }
+            })
+            .actualizarDetalleEstimacion(window.idEstimacionActual, items);
+    };
+
+</script>
