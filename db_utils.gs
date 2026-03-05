@@ -7,6 +7,7 @@
  * Función de utilidad para obtener datos de una hoja con reintentos en caso de errores transitorios.
  */
 function getSafeData(sheet) {
+    if (!sheet) return [];
     let retries = 3;
     while (retries > 0) {
         try {
@@ -56,7 +57,24 @@ function dbSelect(tabla, condiciones = {}) {
                     let val = row[idx];
                     // Asegurar que las fechas sean serializables como strings para evitar errores INTERNAL en el retorno
                     if (val instanceof Date) {
-                        val = Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd'T12:00:00'");
+                        if (h === 'Periodo') {
+                            // Si es la etiqueta de periodo, mantener como texto legible (Mes Año) en Español
+                            const mesesMap = {
+                                'January': 'Enero', 'February': 'Febrero', 'March': 'Marzo', 'April': 'Abril',
+                                'May': 'Mayo', 'June': 'Junio', 'July': 'Julio', 'August': 'Agosto',
+                                'September': 'Septiembre', 'October': 'Octubre', 'November': 'Noviembre', 'December': 'Diciembre'
+                            };
+                            let label = Utilities.formatDate(val, Session.getScriptTimeZone(), "MMMM yyyy");
+                            for (let en in mesesMap) {
+                                if (label.indexOf(en) !== -1) {
+                                    label = label.replace(en, mesesMap[en]);
+                                    break;
+                                }
+                            }
+                            val = label.toUpperCase();
+                        } else {
+                            val = Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd'T12:00:00'");
+                        }
                     }
                     record[h] = val;
                 }

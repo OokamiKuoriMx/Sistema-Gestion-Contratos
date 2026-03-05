@@ -77,8 +77,27 @@
     }
 
     .nav-link.active {
-        background: linear-gradient(90deg, rgba(165, 127, 44, 0.2) 0%, rgba(165, 127, 44, 0) 100%);
-        border-right: 3px solid var(--inst-oro);
+        background: rgba(255, 255, 255, 0.08);
+        border-left: 4px solid var(--inst-oro);
+        border-radius: 0 0.75rem 0.75rem 0;
+        /* Solo redondeado a la derecha al ser activo con borde izquierdo */
+        margin-left: 0;
+    }
+
+    .nav-link:not(.active) {
+        border-left: 4px solid transparent;
+    }
+
+    /* Ajuste para que los iconos no se muevan al colapsar */
+    .sidebar-icon-container {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+    }
+
+    #sidebar.collapsed .sidebar-icon-container {
+        margin-left: auto;
+        margin-right: auto;
     }
 
     .sidebar-text {

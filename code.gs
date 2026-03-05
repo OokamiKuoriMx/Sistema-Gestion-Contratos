@@ -31,7 +31,8 @@ const ESQUEMA_BD = {
     'Deducciones_Retenciones': ['ID_Deduccion', 'ID_Estimacion', 'Tipo_Deduccion', 'Monto_Deducido', 'Concepto_Deduccion'],
     'Facturas': ['ID_Factura', 'ID_Estimacion', 'Folio_Fiscal_UUID', 'No_Factura', 'Fecha_Emision', 'Monto_Facturado', 'Estatus_SAT', 'Link_Sharepoint'],
     'Pagos_Emitidos': ['ID_Pago', 'ID_Estimacion', 'Fecha_Pago', 'Monto_Pagado', 'Referencia_Bancaria', 'Estatus_Pago'],
-    'Matriz_Insumos': ['ID_Matriz', 'ID_Concepto', 'Tipo_Insumo', 'Clave_Insumo', 'Descripcion', 'Unidad', 'Costo_Unitario', 'Rendimiento_Cantidad', 'Importe', 'Porcentaje_Incidencia']
+    'Matriz_Insumos': ['ID_Matriz', 'ID_Concepto', 'Tipo_Insumo', 'Clave_Insumo', 'Descripcion', 'Unidad', 'Costo_Unitario', 'Rendimiento_Cantidad', 'Importe', 'Porcentaje_Incidencia'],
+    'Validacion_Archivos': ['ID_Validacion', 'ID_Estimacion', 'Tipo_Archivo', 'Fecha_Carga', 'Estado_Validacion', 'Checklist_JSON', 'Observaciones_Resumen']
 };
 
 function doGet(e) {
@@ -51,10 +52,28 @@ function include(filename) {
 
 function generarRespuesta(exito, resultado, nombreFuncion = "") {
     if (exito) {
-        return { success: true, data: resultado };
+        return { success: true, data: sanitizeData(resultado) };
     } else {
         return { success: false, error: resultado, functionName: nombreFuncion };
     }
+}
+
+/**
+ * Sanitiza recursivamente un objeto o array para asegurar que sea serializable por GAS.
+ * Convierte objetos Date a strings ISO.
+ */
+function sanitizeData(data) {
+    if (data === null || data === undefined) return data;
+    if (data instanceof Date) return Utilities.formatDate(data, Session.getScriptTimeZone(), "yyyy-MM-dd'T12:00:00'");
+    if (Array.isArray(data)) return data.map(item => sanitizeData(item));
+    if (typeof data === 'object' && data !== null) {
+        const sanitized = {};
+        for (const key in data) {
+            sanitized[key] = sanitizeData(data[key]);
+        }
+        return sanitized;
+    }
+    return data;
 }
 
 function getView(nombreVista) {
@@ -208,91 +227,182 @@ function actualizarDatosContrato(idContrato, nuevosDatos) {
 
 function getDashboardData() {
     const nombreFuncion = "getDashboardData";
+    const sanitizeDate = (d) => {
+        if (d instanceof Date) {
+            try {
+                return Utilities.formatDate(d, Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd'T12:00:00'");
+            } catch (e) { return null; }
+        }
+        return d;
+    };
+
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheetContratos = ss.getSheetByName('Contratos');
         const sheetEstimaciones = ss.getSheetByName('Estimaciones');
-        let presupuestoTotalContratado = 0;
+        const sheetPagos = ss.getSheetByName('Pagos_Emitidos');
+        const sheetPrograma = ss.getSheetByName('Programa_Ejecucion');
+        const sheetPeriodos = ss.getSheetByName('Programa_Periodo');
+
+        let totalContratado = 0;
+        let totalFiniquitado = 0;
+        let totalPagado = 0;
         let contratosActivos = 0;
         let estimacionesPendientes = 0;
         let fianzasPorVencer = 0;
-        let contratosRecientes = [];
+
         const parseMonto = (v) => {
             if (typeof v === 'number') return v;
             if (!v) return 0;
             let n = parseFloat(String(v).replace(/[$,\s]/g, ''));
             return isNaN(n) ? 0 : n;
         };
-        if (sheetContratos) {
+
+        // 1. Datos de Contratos
+        let contratosRecientes = [];
+        const conteoEstados = {};
+        try {
             const dataC = getSafeData(sheetContratos);
-            if (dataC.length > 1) {
-                const cabecerasC = dataC[0];
-                let idxEstado = getColIndex(cabecerasC, 'Estatus');
-                if (idxEstado === -1) idxEstado = getColIndex(cabecerasC, 'Situación');
-                if (idxEstado === -1) idxEstado = getColIndex(cabecerasC, 'Estado');
-                const idxMontoConIva = getColIndex(cabecerasC, 'Monto_Total_Con_IVA');
-                const idxIdContrato = getColIndex(cabecerasC, 'ID_Contrato');
-                const idxNumContrato = getColIndex(cabecerasC, 'Numero_Contrato');
-                const idxFechaFirma = getColIndex(cabecerasC, 'Fecha_Firma');
-                if (idxMontoConIva === -1) throw new Error("No se encontró la columna de Monto (Monto_Total_Con_IVA) en 'Contratos'");
-                let todosLosContratos = [];
+            if (dataC && dataC.length > 1) {
+                const cabC = dataC[0];
+                const idxMonto = getColIndex(cabC, 'Monto_Total_Con_IVA');
+                const idxEstadoCol = getColIndex(cabC, 'Estado');
+                const idxEstado = idxEstadoCol !== -1 ? idxEstadoCol : getColIndex(cabC, 'Situación');
+                const idxId = getColIndex(cabC, 'ID_Contrato');
+                const idxNum = getColIndex(cabC, 'Numero_Contrato');
+                const idxFecha = getColIndex(cabC, 'Fecha_Firma');
+
+                const todos = [];
                 for (let i = 1; i < dataC.length; i++) {
-                    const fila = dataC[i];
-                    let estadoOriginal = String(fila[idxEstado] || '').trim();
-                    let estadoLow = estadoOriginal.toLowerCase();
-                    let monto = parseMonto(fila[idxMontoConIva]);
-                    const palabrasGeograficas = ['mexico', 'coahuila', 'chiapas', 'hidalgo', 'puebla', 'veracruz', 'queretaro'];
-                    const esGeografico = palabrasGeograficas.some(p => estadoLow.includes(p));
-                    if (estadoLow === 'activo' || estadoLow === 'vigente' || estadoLow === 'en proceso' || esGeografico || estadoOriginal === '') {
+                    const f = dataC[i];
+                    const monto = parseMonto(f[idxMonto]);
+                    const estado = String(f[idxEstado] || 'N/A').trim();
+                    const estadoLow = estado.toLowerCase();
+
+                    conteoEstados[estado] = (conteoEstados[estado] || 0) + 1;
+
+                    if (['activo', 'vigente', 'en proceso'].includes(estadoLow) || estado === '') {
                         contratosActivos++;
-                        presupuestoTotalContratado += monto;
                     }
-                    todosLosContratos.push({
-                        ID_Contrato: idxIdContrato !== -1 ? fila[idxIdContrato] : '',
-                        Numero_Contrato: idxNumContrato !== -1 ? fila[idxNumContrato] : 'S/N',
-                        Estado: estadoOriginal || 'N/A',
+
+                    if (estadoLow.includes('finiquit') || estadoLow.includes('cerrado') || estadoLow.includes('concluido')) {
+                        totalFiniquitado += monto;
+                    }
+
+                    totalContratado += monto;
+
+                    todos.push({
+                        ID_Contrato: idxId !== -1 ? f[idxId] : '',
+                        Numero_Contrato: idxNum !== -1 ? f[idxNum] : 'S/N',
+                        Estado: estado,
                         Monto_Total_Con_IVA: monto,
-                        Fecha_Firma: (idxFechaFirma !== -1 && fila[idxFechaFirma] instanceof Date) ? fila[idxFechaFirma] : new Date(0)
+                        Fecha_Firma_Date: (idxFecha !== -1 && f[idxFecha] instanceof Date) ? f[idxFecha] : new Date(0)
                     });
                 }
-                todosLosContratos.sort((a, b) => b.Fecha_Firma - a.Fecha_Firma);
-                contratosRecientes = todosLosContratos.slice(0, 5).map(c => ({
-                    ID_Contrato: c.ID_Contrato,
-                    Numero_Contrato: c.Numero_Contrato,
-                    Estado: c.Estado,
-                    Monto_Total_Con_IVA: c.Monto_Total_Con_IVA
-                }));
+                todos.sort((a, b) => b.Fecha_Firma_Date - a.Fecha_Firma_Date);
+                contratosRecientes = todos.slice(0, 8).map(c => {
+                    const sanitized = { ...c };
+                    sanitized.Fecha_Firma = sanitizeDate(c.Fecha_Firma_Date);
+                    delete sanitized.Fecha_Firma_Date; // Borrar objeto Date para evitar errores de serialización
+                    return sanitized;
+                });
             }
+        } catch (e) {
+            console.error("Error procesando contratos:", e);
         }
-        if (sheetEstimaciones) {
-            try {
+
+        // 2. Datos de Pagos
+        try {
+            if (sheetPagos) {
+                const dataP = getSafeData(sheetPagos);
+                if (dataP && dataP.length > 1) {
+                    const cabP = dataP[0];
+                    const idxMontoP = getColIndex(cabP, 'Monto_Pagado');
+                    for (let i = 1; i < dataP.length; i++) {
+                        totalPagado += parseMonto(dataP[i][idxMontoP]);
+                    }
+                }
+            }
+        } catch (e) { console.error("Error procesando pagos:", e); }
+
+        // 3. Estimaciones Pendientes
+        try {
+            if (sheetEstimaciones) {
                 const dataE = getSafeData(sheetEstimaciones);
-                if (dataE.length > 1) {
-                    const cabecerasE = dataE[0];
-                    let idxEstadoVal = getColIndex(cabecerasE, 'Estado_Validacion');
-                    if (idxEstadoVal === -1) idxEstadoVal = getColIndex(cabecerasE, 'Validación');
-                    if (idxEstadoVal === -1) idxEstadoVal = getColIndex(cabecerasE, 'Estatus');
-                    if (idxEstadoVal !== -1) {
+                if (dataE && dataE.length > 1) {
+                    const cabE = dataE[0];
+                    const idxEst = getColIndex(cabE, 'Estado_Validacion');
+                    if (idxEst !== -1) {
                         for (let i = 1; i < dataE.length; i++) {
-                            let estadoVal = String(dataE[i][idxEstadoVal] || '').trim().toLowerCase();
-                            if (estadoVal === 'pendiente' || estadoVal === 'en revisión' || estadoVal === 'en revision' || estadoVal === 'proceso') {
+                            const est = String(dataE[i][idxEst] || '').toLowerCase();
+                            if (['pendiente', 'en revisión', 'en revision'].includes(est)) {
                                 estimacionesPendientes++;
                             }
                         }
                     }
                 }
-            } catch (e) { }
+            }
+        } catch (e) { console.error("Error procesando estimaciones:", e); }
+
+        // 4. Proyecciones
+        let proyeccionesMensuales = {};
+        let corteEjercicios = {};
+        try {
+            if (sheetPrograma && sheetPeriodos) {
+                const dataProg = getSafeData(sheetPrograma);
+                const dataPer = getSafeData(sheetPeriodos);
+
+                if (dataProg && dataProg.length > 1 && dataPer && dataPer.length > 1) {
+                    const cabProg = dataProg[0];
+                    const cabPer = dataPer[0];
+                    const idxMontoProg = getColIndex(cabProg, 'Monto_Programado');
+                    const idxIdPerProg = getColIndex(cabProg, 'ID_Programa_Periodo');
+                    const idxIdPer = getColIndex(cabPer, 'ID_Programa_Periodo');
+                    const idxFechaPer = getColIndex(cabPer, 'Fecha_Inicio');
+
+                    const mapaPeriodos = {};
+                    for (let i = 1; i < dataPer.length; i++) {
+                        mapaPeriodos[String(dataPer[i][idxIdPer])] = dataPer[i][idxFechaPer];
+                    }
+
+                    for (let i = 1; i < dataProg.length; i++) {
+                        const idPer = String(dataProg[i][idxIdPerProg]);
+                        const monto = parseMonto(dataProg[i][idxMontoProg]);
+                        const fecha = mapaPeriodos[idPer];
+
+                        if (fecha instanceof Date) {
+                            const year = fecha.getFullYear();
+                            const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+                            const keyMes = `${year}-${mes}`;
+                            proyeccionesMensuales[keyMes] = (proyeccionesMensuales[keyMes] || 0) + monto;
+                            corteEjercicios[year] = (corteEjercicios[year] || 0) + monto;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error procesando proyecciones:", e);
+            proyeccionesMensuales = {};
+            corteEjercicios = {};
         }
+
         return generarRespuesta(true, {
             kpis: {
-                presupuestoEjecutado: presupuestoTotalContratado,
-                contratosActivos: contratosActivos,
-                estimacionesPendientes: estimacionesPendientes,
-                fianzasPorVencer: fianzasPorVencer
+                totalContratado,
+                totalPagado,
+                totalFiniquitado,
+                porEjercer: totalContratado - totalPagado,
+                contratosActivos,
+                estimacionesPendientes,
+                fianzasPorVencer
             },
-            contratosRecientes: contratosRecientes
+            contratosRecientes,
+            conteoEstados,
+            proyeccionesMensuales,
+            corteEjercicios
         });
     } catch (error) {
+        console.error("Error fatal en getDashboardData:", error);
         return generarRespuesta(false, error.message, nombreFuncion);
     }
 }
@@ -443,7 +553,20 @@ function getProgramaEjecucion(idContrato) {
             if (curr.getFullYear() === fInicio.getFullYear() && curr.getMonth() === fInicio.getMonth()) mesStart = fInicio;
             if (curr.getFullYear() === fFin.getFullYear() && curr.getMonth() === fFin.getMonth()) mesEnd = fFin;
 
-            const label = Utilities.formatDate(curr, Session.getScriptTimeZone(), "MMM yyyy").toUpperCase();
+            const mesesMap = {
+                'January': 'Enero', 'February': 'Febrero', 'March': 'Marzo', 'April': 'Abril',
+                'May': 'Mayo', 'June': 'Junio', 'July': 'Julio', 'August': 'Agosto',
+                'September': 'Septiembre', 'October': 'Octubre', 'November': 'Noviembre', 'December': 'Diciembre'
+            };
+            const labelEn = Utilities.formatDate(curr, Session.getScriptTimeZone(), "MMMM yyyy");
+            let label = labelEn;
+            for (let en in mesesMap) {
+                if (label.indexOf(en) !== -1) {
+                    label = label.replace(en, mesesMap[en]);
+                    break;
+                }
+            }
+            label = label.toUpperCase();
 
             // BUSQUEDA ROBUSTA: Por número de periodo en lugar de solo label para evitar duplicados por idioma/formato
             let pExistente = periodosExistentes.find(p => parseInt(p[idxPerNum]) === contadorNumPer);
@@ -453,12 +576,13 @@ function getProgramaEjecucion(idContrato) {
                 const fullDataPer = getSafeData(sheetPer);
                 const lastId = fullDataPer.length > 1 ? Math.max(...fullDataPer.slice(1).map(r => parseInt(r[idxPerId]) || 0)) : 0;
                 idPeriodo = lastId + 1;
-                sheetPer.appendRow([idPeriodo, idNumeroPrograma, contadorNumPer, label, mesStart, mesEnd]);
+                // Forzar formato texto con apostrofe para evitar auto-deteccion de fecha en Sheets
+                sheetPer.appendRow([idPeriodo, idNumeroPrograma, contadorNumPer, "'" + label, mesStart, mesEnd]);
             } else {
                 idPeriodo = pExistente[idxPerId];
                 // Opcional: Actualizar el label si ha cambiado
-                if (pExistente[idxPerLabel] !== label && !pExistente[idxPerLabel]) {
-                    sheetPer.getRange(dataPer.indexOf(pExistente) + 1, idxPerLabel + 1).setValue(label);
+                if (String(pExistente[idxPerLabel]) !== String(label) && !pExistente[idxPerLabel]) {
+                    sheetPer.getRange(dataPer.indexOf(pExistente) + 1, idxPerLabel + 1).setValue("'" + label);
                 }
             }
 
@@ -480,7 +604,9 @@ function getProgramaEjecucion(idContrato) {
         // 4. Obtener conceptos y Programa_Ejecucion (Nivel 3)
         const conceptosRes = getConceptosContrato(idContrato);
         const conceptos = conceptosRes.success ? conceptosRes.data : [];
-        if (conceptos.length === 0) return generarRespuesta(true, { meses: mesesLabels, conceptosMatriz: [] });
+        if (conceptos.length === 0) {
+            return generarRespuesta(true, { meses: mesesLabels, conceptosMatriz: [] });
+        }
 
         const dataEjec = getSafeData(sheetEjec);
         const cabecerasEjec = dataEjec[0];
@@ -489,17 +615,19 @@ function getProgramaEjecucion(idContrato) {
         const idxEjPerId = getColIndex(cabecerasEjec, 'ID_Programa_Periodo');
         const idxEjMonto = getColIndex(cabecerasEjec, 'Monto_Programado');
 
-        const conceptosMatriz = conceptos.map(c => {
-            const montosMensuales = Array(mesesLabels.length).fill(0);
-
-            mesesLabels.forEach((mes, idx) => {
-                const reg = dataEjec.find(r =>
-                    String(r[idxEjProg]) === String(idNumeroPrograma) &&
-                    String(r[idxEjConc]) === String(c.ID_Concepto) &&
-                    String(r[idxEjPerId]) === String(mes.id)
-                );
-                if (reg) montosMensuales[idx] = parseFloat(reg[idxEjMonto]) || 0;
+        // OPTIMIZACIÓN: Crear un mapa de ejecuciones para acceso O(1)
+        const ejecuMap = {};
+        if (dataEjec.length > 1) {
+            dataEjec.slice(1).forEach(r => {
+                if (String(r[idxEjProg]) === String(idNumeroPrograma)) {
+                    const key = `${r[idxEjConc]}_${r[idxEjPerId]}`;
+                    ejecuMap[key] = parseFloat(r[idxEjMonto]) || 0;
+                }
             });
+        }
+
+        const conceptosMatriz = conceptos.map(c => {
+            const montosMensuales = mesesLabels.map(mes => ejecuMap[`${c.ID_Concepto}_${mes.id}`] || 0);
 
             return {
                 id: c.ID_Concepto,
@@ -517,6 +645,7 @@ function getProgramaEjecucion(idContrato) {
         });
 
     } catch (error) {
+        console.error(`Error en ${nombreFuncion}: ${error.stack}`);
         return generarRespuesta(false, error.message, nombreFuncion);
     }
 }
@@ -1649,7 +1778,7 @@ function guardarConfiguracionPrograma(idContrato, config) {
             dbInsert('Programa_Periodo', {
                 'ID_Numero_Programa': idProg,
                 'Numero_Periodo': index + 1,
-                'Periodo': p.label,
+                'Periodo': "'" + p.label, // Forzar texto
                 'Fecha_Inicio': p.fechaInicio,
                 'Fecha_Termino': p.fechaTermino
             });
@@ -1694,6 +1823,123 @@ function eliminarPeriodo(idPeriodo) {
         dbDelete('Programa_Periodo', { 'ID_Programa_Periodo': idPeriodo });
 
         return generarRespuesta(true, "Periodo eliminado correctamente.");
+    } catch (error) {
+        return generarRespuesta(false, error.message, nombreFuncion);
+    }
+}
+
+/**
+ * Guarda o actualiza un registro de validación de archivo para una estimación.
+ * Si ya existe un registro para el mismo ID_Estimacion + Tipo_Archivo, lo actualiza.
+ * @param {string} idEstimacion - ID de la estimación
+ * @param {string} tipoArchivo - 'CARATULA_GENERADOR' | 'FACTURA_BORRADOR' | 'FACTURA_TIMBRADA'
+ * @param {string} estadoValidacion - 'APROBADO' | 'CON_ERRORES' | 'PENDIENTE'
+ * @param {Array} checklistArray - Array de objetos {rubro, aprobado, observacion}
+ * @param {string} observacionesResumen - Texto libre con resumen
+ */
+function guardarValidacionArchivo(idEstimacion, tipoArchivo, estadoValidacion, checklistArray, observacionesResumen) {
+    const nombreFuncion = "guardarValidacionArchivo";
+    try {
+        if (!idEstimacion) throw new Error("ID de estimación no proporcionado.");
+        if (!tipoArchivo) throw new Error("Tipo de archivo no proporcionado.");
+
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        let sheet = ss.getSheetByName('Validacion_Archivos');
+        if (!sheet) {
+            sheet = ss.insertSheet('Validacion_Archivos');
+            sheet.appendRow(ESQUEMA_BD['Validacion_Archivos']);
+        }
+
+        const data = getSafeData(sheet);
+        const cabeceras = data[0];
+        const idxId = getColIndex(cabeceras, 'ID_Validacion');
+        const idxIdEst = getColIndex(cabeceras, 'ID_Estimacion');
+        const idxTipo = getColIndex(cabeceras, 'Tipo_Archivo');
+        const idxFecha = getColIndex(cabeceras, 'Fecha_Carga');
+        const idxEstado = getColIndex(cabeceras, 'Estado_Validacion');
+        const idxChecklist = getColIndex(cabeceras, 'Checklist_JSON');
+        const idxObs = getColIndex(cabeceras, 'Observaciones_Resumen');
+
+        const checklistJSON = JSON.stringify(checklistArray || []);
+        const ahora = new Date();
+
+        // Buscar registro existente para esta estimación + tipo
+        let filaExistente = -1;
+        for (let i = 1; i < data.length; i++) {
+            if (String(data[i][idxIdEst]) === String(idEstimacion) && String(data[i][idxTipo]) === String(tipoArchivo)) {
+                filaExistente = i + 1;
+                break;
+            }
+        }
+
+        if (filaExistente !== -1) {
+            // Actualizar registro existente
+            sheet.getRange(filaExistente, idxFecha + 1).setValue(ahora);
+            sheet.getRange(filaExistente, idxEstado + 1).setValue(estadoValidacion);
+            sheet.getRange(filaExistente, idxChecklist + 1).setValue(checklistJSON);
+            sheet.getRange(filaExistente, idxObs + 1).setValue(observacionesResumen || '');
+        } else {
+            // Crear nuevo registro
+            const nuevoId = "VAL-" + Utilities.getUuid().substring(0, 8).toUpperCase();
+            sheet.appendRow([
+                nuevoId,
+                String(idEstimacion),
+                tipoArchivo,
+                ahora,
+                estadoValidacion,
+                checklistJSON,
+                observacionesResumen || ''
+            ]);
+        }
+
+        return generarRespuesta(true, { idEstimacion, tipoArchivo, estado: estadoValidacion });
+    } catch (error) {
+        return generarRespuesta(false, error.message, nombreFuncion);
+    }
+}
+
+/**
+ * Obtiene todos los registros de validación para una estimación.
+ * @param {string} idEstimacion - ID de la estimación
+ * @returns {Object} Array de registros de validación con checklist parseado
+ */
+function getValidacionesEstimacion(idEstimacion) {
+    const nombreFuncion = "getValidacionesEstimacion";
+    try {
+        if (!idEstimacion) throw new Error("ID de estimación no proporcionado.");
+
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheet = ss.getSheetByName('Validacion_Archivos');
+        if (!sheet) return generarRespuesta(true, []);
+
+        const data = getSafeData(sheet);
+        if (data.length <= 1) return generarRespuesta(true, []);
+
+        const cabeceras = data[0];
+        const idxIdEst = getColIndex(cabeceras, 'ID_Estimacion');
+        const resultados = [];
+
+        for (let i = 1; i < data.length; i++) {
+            if (String(data[i][idxIdEst]) === String(idEstimacion)) {
+                let obj = {};
+                for (let j = 0; j < cabeceras.length; j++) {
+                    let val = data[i][j];
+                    if (val instanceof Date) {
+                        val = Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+                    }
+                    obj[cabeceras[j]] = val;
+                }
+                // Parsear Checklist_JSON a objeto
+                try {
+                    obj.Checklist = JSON.parse(obj.Checklist_JSON || '[]');
+                } catch (e) {
+                    obj.Checklist = [];
+                }
+                resultados.push(obj);
+            }
+        }
+
+        return generarRespuesta(true, resultados);
     } catch (error) {
         return generarRespuesta(false, error.message, nombreFuncion);
     }

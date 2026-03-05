@@ -8,6 +8,51 @@ if (!GEMINI_API_KEY) {
     console.error("ERROR: La propiedad GEMINI_API_KEY no está configurada en el Proyecto.");
 }
 
+const PROMPT_CLASIFICADOR_DOCUMENTOS = `
+Rol: Eres un clasificador experto de documentos técnicos de construcción y administración pública.
+Objetivo: Identificar el tipo de documento proporcionado.
+
+Tipos Posibles:
+1. 'Contratos': Documentos que mencionan "Contrato de Obra", números de contrato, fianzas, anticipos, y las partes firmantes.
+2. 'CAF': "Convenio de Aportación Financiera", "Autorización de Recursos", "Suficiencia Presupuestal", mención de fondos federales/estatales.
+3. 'Programa': "Programa de Obra", "Calendario de Ejecución", tablas con meses/semanas y montos programados o porcentajes.
+4. 'Matriz_Insumos': "Análisis de Precios Unitarios", "Matrices", listado de materiales, mano de obra y equipo por concepto.
+
+Instrucción: Analiza el contenido y responde ÚNICAMENTE con un JSON con el campo "clase" igual a uno de los strings anteriores o "Desconocido".
+Ejemplo: {"clase": "Contratos"}
+`;
+
+/**
+ * Clasifica un documento usando IA para identificar si es Contrato, CAF, Programa o Matriz.
+ */
+function clasificarDocumentoIA(base64Content, mimeType) {
+    try {
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: PROMPT_CLASIFICADOR_DOCUMENTOS },
+                    { inline_data: { mime_type: mimeType, data: base64Content.split(',')[1] || base64Content } }
+                ]
+            }],
+            generationConfig: { response_mime_type: "application/json" }
+        };
+
+        const options = {
+            method: 'post',
+            contentType: 'application/json',
+            payload: JSON.stringify(payload)
+        };
+
+        const response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, options);
+        const result = JSON.parse(response.getContentText());
+        const jsonResponse = JSON.parse(result.candidates[0].content.parts[0].text);
+
+        return { success: true, clase: jsonResponse.clase };
+    } catch (e) {
+        return { success: false, error: e.toString() };
+    }
+}
+
 /**
  * Normaliza un texto para comparaciones (quita acentos, puntuación, espacios extra y convierte a minúsculas)
  */
@@ -80,6 +125,86 @@ Reglas Críticas de Clasificación y Clasificación:
 - **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
 `;
 
+const PROMPT_IMPORTACION_CAF = `
+Rol y Objetivo:
+Eres un Experto en Gestión de Recursos Federales y Estatales para el Sistema de Gestión de Contratos (SGC). Tu misión es extraer datos de "Convenios de Aportación Financiera (CAF)", "Convenios de Recurso" o "Suficiencias Presupuestales".
+
+Estructura de Extracción (Tabla):
+1. **Convenios_Recurso**: 
+   - 'Numero_Acuerdo': Clave o número de convenio oficial.
+   - 'Nombre_Fondo': Nombre del fondo, fideicomiso o programa (ej: "FISM", "FORTAMUN", "Fideicomiso 1936").
+   - 'Monto_Apoyo': Importe total autorizado.
+   - 'Fecha_Firma': Fecha en que se suscribe el documento.
+   - 'Vigencia_Fin': Fecha límite de ejercicio del recurso.
+   - 'Objeto_Programa': Breve descripción de la finalidad del recurso.
+
+Reglas Críticas:
+- Identifica claramente el ente aportante y el ejecutor.
+- Si el documento es una "Suficiencia Presupuestal", usa el folio de la suficiencia como 'Numero_Acuerdo'.
+- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+`;
+
+const PROMPT_IMPORTACION_PROGRAMA = `
+Rol y Objetivo:
+Eres un Experto en Programación y Control de Obra para el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos de "Programa de Obra", "Calendario de Ejecución" o "Cronograma" y extraer los montos programados por periodo.
+
+Estructura de Extracción (Tablas):
+1. **Programa**: 'Tipo_Programa' (Ej: "Ejecución", "Suministros"), 'Fecha_Inicio', 'Fecha_Termino'.
+2. **Programa_Periodo**: Identifica los encabezados de columnas (Meses/Semanas/Quincenas). Extrae: 'Numero_Periodo' (1, 2, 3...), 'Periodo' (Nombre del mes o intervalo), 'Fecha_Inicio', 'Fecha_Termino'.
+3. **Programa_Ejecucion**: Vincula conceptos con periodos. Extrae: 'ID_Concepto' (Usa la clave del concepto), 'Monto_Programado', 'Avance_Programado_Pct'.
+
+Reglas Críticas:
+- **Matching de Catálogo**: Se te proporcionará un "Catálogo Actual". DEBES usar los 'ID_Concepto' y 'Clave' existentes para vincular el programa.
+- **Distribución Temporal**: Si el documento muestra una cuadrícula, identifica qué columna corresponde a cada periodo.
+- **Totales**: Valida que la suma de los montos por periodo coincida con el total del concepto si está disponible.
+- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+`;
+
+const PROMPT_VALIDACION_ESTIMACIONES = `
+Rol y Objetivo:
+Eres un Agente de Inteligencia IA y Auditor Experto en Obra Pública para el Sistema de Gestión de Contratos (SGC).
+Tu misión es AUDITAR y VALIDAR documentos de "Estimaciones de Obra/Servicios" (carátulas, generadores, borradores de factura) contra los datos registrados en el sistema.
+
+Reglas Críticas de Auditoría:
+1. **Datos Generales**: Valida que coincidan: Objeto del Contrato, No. de Estimación, y CAF (Suficiencia Presupuestaria).
+2. **Plazos**: Coteja Periodo del Contrato vs Periodo de la Estimación.
+3. **Retenciones**: Verifica el cálculo exacto de la retención del 0.5 al millar (Vigilancia).
+4. **Conceptos y Avances**: Valida Conceptos, Precios Unitarios, Importes y Porcentajes de avance (parciales y acumulados) contra el Programa de Ejecución.
+5. **Borrador de Factura (MODELO 2026)**:
+   - Debe contener la leyenda inicial: "RECIBIMOS DEL BANCO NACIONAL DE OBRAS Y SERVICIOS PÚBLICOS S.N.C., POR CUENTA DEL FIDEICOMISO NO. 1936..."
+   - Debe contener al final los datos: Banco, Sucursal, Cuenta y CLABE.
+   - El texto del concepto no debe exceder los 1000 caracteres.
+
+Instrucciones de Auditoría Incremental:
+- Se te puede proporcionar un 'CONTEXTO_AUDITORIA_PREVIA'.
+- Si un rubro ya está marcado como aprobado (aprobado: true) en dicho contexto y el documento actual NO contiene información contraria o suficiente para evaluarlo nuevamente (ej. estás viendo una factura pero el rubro es de la carátula), DEBES PRESERVAR el estado 'true'.
+- Tu objetivo es completar el checklist al 100% (APROBADA) de forma acumulativa entre varios archivos si es necesario.
+- Solo marca un rubro como 'false' si encuentras un error explícito en el documento actual.
+- **DEPENDENCIA CRÍTICA**: No puedes validar el rubro "Borrador de Factura" (rubro 5) si los rubros de la carátula (1 a 4) no están marcados como 'true' en el 'CONTEXTO_AUDITORIA_PREVIA'. Si no hay contexto previo o los rubros 1-4 son false, indica en la observación de la factura que se debe ingresar primero la carátula.
+
+Formato de Salida Estricto (JSON):
+{
+  "accion": "auditoria_validación",
+  "estado_global": "APROBADA" | "EN_REVISION", // Solo APROBADA si EL 100% de los rubros son true.
+  "datos": {
+      // Datos extraídos del documento
+  },
+  "checklist_auditoria": [
+    { "rubro": "Datos Generales (Objeto, No. Est, Periodos)", "aprobado": true, "observacion": "Todo coincide." },
+    { "rubro": "Aritmética y Retenciones (0.5 al millar)", "aprobado": true, "observacion": "Cálculos correctos." },
+    { "rubro": "Avances vs Programa de Ejecución", "aprobado": true, "observacion": "Porcentajes correctos." },
+    { "rubro": "Convenio de Aportación Financiera (CAF)", "aprobado": true, "observacion": "Existe convenio de aportación vinculado." },
+    { "rubro": "Suficiencia de Pago (Autorización)", "aprobado": true, "observacion": "Existe suficiencia de pago vinculada." },
+    { "rubro": "Validación de Importe con Letra", "aprobado": true, "observacion": "Coincide con el monto numérico." },
+    { "rubro": "Borrador de Factura (Modelo y 1000 chars)", "aprobado": false, "observacion": "Faltan datos bancarios al final." }
+  ],
+  "informe_auditoria": {
+      "estado_validacion": "CORRECTO" | "CON_ERRORES",
+      "observaciones": ["Resumen para la UI de discrepancias encontradas"]
+  }
+}
+`;
+
 /**
  * Función llamada desde el frontend para leer el archivo con Gemini y guardar
  */
@@ -101,6 +226,12 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
         let systemPrompt = PROMPT_IMPORTACION_CONTRATOS;
         if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') {
             systemPrompt = PROMPT_IMPORTACION_MATRICES;
+        } else if (targetTable === 'Estimaciones' || targetTable === 'Facturas') {
+            systemPrompt = PROMPT_VALIDACION_ESTIMACIONES;
+        } else if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') {
+            systemPrompt = PROMPT_IMPORTACION_CAF;
+        } else if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') {
+            systemPrompt = PROMPT_IMPORTACION_PROGRAMA;
         }
 
         let promptAdicional = `Lee este archivo oficial. Debes generar estrictamente un objeto JSON estructurado con arrays para las tablas correspondientes basándote en la información encontrada.`;
@@ -108,6 +239,11 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
             promptAdicional += `\n\nATENCIÓN: El usuario subió este documento desde el contexto de la tabla '${targetTable}'.`;
             if (parentContext) {
                 promptAdicional += `\n\nCONTEXTO ADICIONAL: El registro padre tiene esta información: ${JSON.stringify(parentContext)}. Asegúrate de usar estos IDs para vincular los registros hijo que encuentres.`;
+
+                // INYECCIÓN DEL LINK DE SHAREPOINT
+                if (parentContext.Link_Sharepoint) {
+                    promptAdicional += `\nINSTRUCCIÓN OBLIGATORIA: Asigna este enlace '${parentContext.Link_Sharepoint}' al campo 'Link_Sharepoint' de todos los registros extraídos.`;
+                }
 
                 // Si es matrices, pasar el catálogo actual para matching por descripción
                 if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') {
@@ -118,6 +254,54 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
                             promptAdicional += `\n\nIMPORTANTE - CATÁLOGO EXISTENTE: A continuación se listan los conceptos que YA ESTÁN en la base de datos para este contrato. 
                             SI la descripción del concepto en el documento coincide contextualmente con alguno de estos, USA SU ID_Concepto Y CLAVE ORIGINAL. NO inventes nuevas claves si puedes hacer match.
                             Catálogo actual: ${JSON.stringify(catalogo.map(c => ({ ID_Concepto: c.ID_Concepto, Clave: c.Clave, Descripcion: c.Descripcion })))}`;
+                        }
+                    }
+                }
+
+                // Si es estimación, pasar los datos actuales de la estimación para comparativa
+                if (targetTable === 'Estimaciones' && parentContext.ID_Estimacion) {
+                    const estActual = dbSelect('Estimaciones', { ID_Estimacion: parentContext.ID_Estimacion });
+                    if (estActual && estActual.length > 0) {
+                        const detalleActual = dbSelect('Detalle_Estimacion', { ID_Estimacion: parentContext.ID_Estimacion });
+                        promptAdicional += `\n\nDATOS ACTUALES EN SISTEMA PARA ESTA ESTIMACIÓN (O BORRADOR):
+                        Carátula: ${JSON.stringify(estActual[0])}
+                        Conceptos ya registrados: ${JSON.stringify(detalleActual.map(d => ({ ID_Concepto: d.ID_Concepto, Cantidad: d.Cantidad_Estimada_Periodo })))}
+                        INSTRUCCIÓN: Compara los datos del documento contra estos datos del sistema. Si hay discrepancias matemáticas o de cantidades, repórtalo en el informe_auditoria.`;
+
+                        // NUEVO: Inyección de Auditoría Previa (Checklist Histórico)
+                        const valsPrevias = dbSelect('Validacion_Archivos', { ID_Estimacion: parentContext.ID_Estimacion });
+                        if (valsPrevias && valsPrevias.length > 0) {
+                            // Tomar la más reciente
+                            const ultimaVal = valsPrevias[valsPrevias.length - 1];
+                            if (ultimaVal.Checklist_JSON) {
+                                try {
+                                    const checklistHist = JSON.parse(ultimaVal.Checklist_JSON);
+                                    promptAdicional += `\n\nCONTEXTO_AUDITORIA_PREVIA: Ya se han validado rubros anteriormente. Mantén los rubros aprobados si el documento actual no los contradice: ${JSON.stringify(checklistHist)}`;
+                                } catch (e) {
+                                    console.error("Error parseando checklist histórico:", e);
+                                }
+                            }
+                        }
+
+                        // NUEVO: Validación de Convenio (CAF) y Suficiencia de Pago
+                        const cont = dbSelect('Contratos', { ID_Contrato: parentContext.ID_Contrato });
+                        if (cont && cont.length > 0) {
+                            const idConv = cont[0].ID_Convenio_Vinculado;
+                            if (idConv) {
+                                const convenio = dbSelect('Convenio_Recurso', { ID_Convenio: idConv });
+                                if (convenio && convenio.length > 0) {
+                                    promptAdicional += `\n\nDATOS DE CAF (CONVENIO): Existe un convenio vinculado (${convenio[0].Numero_Acuerdo}) con monto ${convenio[0].Monto_Apoyo}. 
+                                    INSTRUCCIÓN: Valida el rubro 'Convenio de Aportación Financiera (CAF)' como true.`;
+
+                                    // Para este sistema, el Convenio de Recurso también actúa como Suficiencia de Pago si existe.
+                                    promptAdicional += `\nINSTRUCCIÓN: Valida el rubro 'Suficiencia de Pago (Autorización)' como true basándote en la existencia del CAF.`;
+                                } else {
+                                    promptAdicional += `\n\nALERTA: El contrato tiene un ID_Convenio (${idConv}) pero no se encontró el registro en Convenios_Recurso.`;
+                                }
+                            } else {
+                                promptAdicional += `\n\nALERTA DE AUDITORÍA: El contrato NO tiene un Convenio de Aportación (CAF) ni Suficiencia de Pago vinculada.
+                                INSTRUCCIÓN: Los rubros 'Convenio de Aportación Financiera (CAF)' y 'Suficiencia de Pago (Autorización)' DEBEN ser marcados como false con la observación 'No existe convenio de aportación o autorización vinculada al contrato'.`;
+                            }
                         }
                     }
                 }
@@ -167,11 +351,13 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
 
         // 3. Extraer respuesta (Es JSON texto, así que hay que parsearlo)
         const llmJsonString = resultJson.candidates[0].content.parts[0].text;
-        const datosExtraidos = JSON.parse(llmJsonString);
+        const datosExtraidos = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim()); // Mejora de seguridad en el parseo
 
-        if (datosExtraidos.accion === "importar_datos" && datosExtraidos.datos) {
-            return generarRespuesta(true, datosExtraidos.datos);
+        if ((datosExtraidos.accion === "importar_datos" || datosExtraidos.accion === "auditoria_validación") && datosExtraidos.datos) {
+            // Devolvemos el objeto completo para que el frontend pueda leer 'informe_auditoria'
+            return generarRespuesta(true, datosExtraidos);
         } else {
+            console.error("Estructura IA Inválida:", datosExtraidos);
             throw new Error("El formato JSON devuelto por la IA no corresponde al solicitado.");
         }
 
@@ -440,7 +626,7 @@ function analizarCambiosIA(datos) {
     if (!datos) return generarRespuesta(false, "No hay datos para analizar.");
 
     const cambios = [];
-    const tablasAAnalizar = ['Contratos', 'Contratistas', 'Convenios_Recurso', 'Catalogo_Conceptos', 'Matriz_Insumos'];
+    const tablasAAnalizar = ['Contratos', 'Contratistas', 'Convenios_Recurso', 'Catalogo_Conceptos', 'Matriz_Insumos', 'Programa', 'Programa_Periodo'];
 
     tablasAAnalizar.forEach(tabla => {
         if (datos[tabla] && Array.isArray(datos[tabla])) {
@@ -451,6 +637,7 @@ function analizarCambiosIA(datos) {
             if (tabla === 'Contratistas') skName = 'RFC';
             else if (tabla === 'Contratos') skName = 'Numero_Contrato';
             else if (tabla === 'Convenios_Recurso') skName = 'Numero_Acuerdo';
+            else if (tabla === 'Programa_Periodo') skName = 'Periodo';
 
             datos[tabla].forEach(registro => {
                 let match = null;
@@ -496,6 +683,18 @@ function analizarCambiosIA(datos) {
 
                         let nIA = utilNormalizarValor(valIA);
                         let nDB = utilNormalizarValor(valDB);
+
+                        // Redondeo inteligente para campos de porcentaje:
+                        // Si el documento trae 4.03% y el sistema tiene 4.0251%, 
+                        // redondeamos el sistema a los mismos decimales del documento.
+                        if ((h.includes('Porcentaje') || h.includes('Pct')) && typeof nIA === 'number' && typeof nDB === 'number') {
+                            const strIA = String(valIA).replace(/[%\s]/g, '');
+                            const partes = strIA.split('.');
+                            const decimalesDoc = partes.length > 1 ? partes[1].length : 0;
+                            const factor = Math.pow(10, decimalesDoc);
+                            nDB = Math.round(nDB * factor) / factor;
+                            nIA = Math.round(nIA * factor) / factor;
+                        }
 
                         if (nIA !== "" && nIA !== nDB) {
                             cambios.push({

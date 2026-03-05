@@ -1,4 +1,10 @@
 <script>
+    // Estado global del Wizard de Importación
+    window.wizardStateIA = window.wizardStateIA || {
+        step: 1, // Paso actual desbloqueado
+        completed: [] // Pasos 1, 2, 3, 4 completados
+    };
+
     /**
      * Muestra u oculta el spinner global de carga.
      * Cuando se muestra bloquea automáticamente gracias a sus estilos pointer-events.
@@ -62,6 +68,94 @@
     const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(v || 0);
     const formatoPct = (v) => (v * 100).toFixed(2) + '%';
     const formatoPct4 = (v) => (v * 100).toFixed(4) + '%';
+
+    /**
+     * Convierte un número a su representación en letras (Moneda Mexicana).
+     * @param {number} cantidad - El monto numérico.
+     * @returns {string} - El monto en letras.
+     */
+    function convertirNumeroALetras(cantidad) {
+        const unidades = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
+        const decenas = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
+        const decenasMod = ["", "", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
+        const centenas = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINCIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
+
+        const seccion = (num, divisor, strSingular, strPlural) => {
+            let c = Math.floor(num / divisor);
+            let resto = num % divisor;
+            let s = "";
+            if (c > 0) {
+                if (c > 1) s = decimas(c) + " " + strPlural;
+                else s = strSingular;
+            }
+            if (resto > 0) {
+                if (s !== "") s += " ";
+                s += decimas(resto);
+            }
+            return s;
+        };
+
+        const decimas = (n) => {
+            if (n === 100) return "CIEN";
+            if (n < 10) return unidades[n];
+            if (n < 20) return decenas[n - 10];
+            let d = Math.floor(n / 10);
+            let u = n % 10;
+            if (u > 0) return decenasMod[d] + " Y " + unidades[u];
+            return decenasMod[d];
+        };
+
+        const centes = (n) => {
+            if (n === 100) return "CIEN";
+            let c = Math.floor(n / 100);
+            let resto = n % 100;
+            if (resto > 0) return centenas[c] + " " + decimas(resto);
+            return centenas[c];
+        };
+
+        const miles = (n) => {
+            let m = Math.floor(n / 1000);
+            let resto = n % 1000;
+            let s = "";
+            if (m === 1) s = "MIL";
+            else if (m > 1) s = centes(m) + " MIL";
+            if (resto > 0) {
+                if (s !== "") s += " ";
+                s += centes(resto);
+            }
+            return s;
+        };
+
+        const millones = (n) => {
+            let mill = Math.floor(n / 1000000);
+            let resto = n % 1000000;
+            let s = "";
+            if (mill === 1) s = "UN MILLÓN";
+            else if (mill > 1) s = centes(mill) + " MILLONES";
+            if (resto > 0) {
+                if (s !== "") s += " ";
+                s += miles(resto);
+            }
+            return s;
+        };
+
+        let entero = Math.floor(cantidad);
+        let centavos = Math.round((cantidad - entero) * 100);
+        let letras = "";
+
+        if (entero === 0) letras = "CERO";
+        else if (entero < 1000) letras = centes(entero);
+        else if (entero < 1000000) letras = miles(entero);
+        else letras = millones(entero);
+
+        let centavosStr = centavos.toString().padStart(2, '0') + "/100 M.N.";
+        return letras + " PESOS " + centavosStr;
+    }
+
+    const MESES_ESP = {
+        '01': 'ENE', '02': 'FEB', '03': 'MAR', '04': 'ABR', '05': 'MAY', '06': 'JUN',
+        '07': 'JUL', '08': 'AGO', '09': 'SEP', '10': 'OCT', '11': 'NOV', '12': 'DIC'
+    };
 
     /**
      * Carga una vista desde el servidor usando Lazy Loading e inyecta el HTML en #app-shell.
@@ -174,14 +268,17 @@
     // --- Controladores: Dashboard --- //
 
     function inicializarDashboard() {
-        // No bloqueamos todo con el spinner global para dar sensación de rapidez,
-        // ya que el dashboard tiene su propio spinner local en la tabla de recientes
         google.script.run
             .withSuccessHandler(function (respuesta) {
-                if (respuesta.success) {
+                if (respuesta && respuesta.success) {
                     renderizarDashboard(respuesta.data);
                 } else {
-                    manejarError(respuesta);
+                    const errorMsg = respuesta ? respuesta.error : "El servidor devolvió una respuesta nula (Timeout o error interno).";
+                    manejarError({
+                        success: false,
+                        error: errorMsg,
+                        functionName: 'getDashboardData'
+                    });
                 }
             })
             .withFailureHandler(function (error) {
@@ -197,62 +294,120 @@
     function renderizarDashboard(data) {
         if (!data) return;
 
-        // --- Renderizar KPIs ---
-        const formatoMoneda = (valor) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(valor || 0);
+        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+        const kpis = data.kpis || {};
 
-        document.getElementById('kpi-presupuesto').textContent = formatoMoneda(data.kpis.presupuestoEjecutado);
-        document.getElementById('kpi-activos').textContent = data.kpis.contratosActivos || '0';
-        document.getElementById('kpi-estimaciones').textContent = data.kpis.estimacionesPendientes || '0';
-        document.getElementById('kpi-fianzas').textContent = data.kpis.fianzasPorVencer || '0';
+        // 1. Renderizar KPIs Financieros
+        const total = kpis.totalContratado || 0;
+        const pagado = kpis.totalPagado || 0;
+        const finiquitado = kpis.totalFiniquitado || 0;
+        const porEjercer = kpis.porEjercer || 0;
+        const pctPagado = total > 0 ? (pagado / total) * 100 : 0;
 
-        // --- Renderizar Tabla de Contratos Recientes ---
-        const tbody = document.getElementById('dashboard-contratos-body');
+        document.getElementById('kpi-total-contratado').textContent = formatoMoneda(total);
+        document.getElementById('kpi-total-pagado').textContent = formatoMoneda(pagado);
+        document.getElementById('kpi-total-finiquitado').textContent = formatoMoneda(finiquitado);
+        document.getElementById('kpi-por-ejercer').textContent = formatoMoneda(porEjercer);
 
-        if (!data.contratosRecientes || data.contratosRecientes.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" class="px-5 py-8 text-center text-sm text-gray-500 bg-white">No hay contratos recientes.</td></tr>`;
-            return;
+        const barProgreso = document.getElementById('bar-progreso-financiero');
+        if (barProgreso) barProgreso.style.width = pctPagado.toFixed(2) + '%';
+        const lblPct = document.getElementById('lbl-porcentaje-pagado');
+        if (lblPct) lblPct.textContent = pctPagado.toFixed(2) + '% del presupuesto';
+
+        // 2. Renderizar Proyecciones Mensuales (Mini Chart CSS)
+        const containerProy = document.getElementById('chart-proyecciones-pagos');
+        if (containerProy && data.proyeccionesMensuales) {
+            const meses = Object.keys(data.proyeccionesMensuales).sort();
+            if (meses.length > 0) {
+                const maxMonto = Math.max(...Object.values(data.proyeccionesMensuales));
+                containerProy.innerHTML = meses.map(mes => {
+                    const monto = data.proyeccionesMensuales[mes];
+                    const altura = maxMonto > 0 ? (monto / maxMonto * 100) : 0;
+                    const labelMes = mes.split('-')[1]; // Solo el mes
+                    return `
+                        <div class="flex flex-col items-center group/bar relative h-full justify-end">
+                            <div class="absolute -top-10 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap z-10 shadow-xl">
+                                ${formatoMoneda(monto)}
+                            </div>
+                            <div class="w-full bg-inst-vino/10 rounded-t-lg group-hover/bar:bg-inst-vino/30 transition-all cursor-help relative" style="height: ${altura}%">
+                                <div class="absolute bottom-0 left-0 w-full bg-inst-vino rounded-t-lg" style="height: ${Math.min(altura, 20)}%"></div>
+                            </div>
+                            <span class="text-[8px] font-black text-slate-400 mt-2 uppercase">${MESES_ESP[labelMes] || labelMes}</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                containerProy.innerHTML = `<div class="col-span-full text-center text-slate-300 italic text-xs py-10">Sin datos de programa cargados.</div>`;
+            }
         }
 
-        let htmlRows = '';
-        data.contratosRecientes.forEach(contrato => {
-            let colorEstado = 'bg-gray-100 text-gray-800';
-            let estadoLabel = contrato.Estado ? contrato.Estado : 'N/A';
+        // 3. Renderizar Corte de Ejercicios
+        const containerEjer = document.getElementById('list-corte-ejercicios');
+        if (containerEjer && data.corteEjercicios) {
+            const años = Object.keys(data.corteEjercicios).sort((a, b) => b - a);
+            let totalProg = 0;
+            if (años.length > 0) {
+                containerEjer.innerHTML = años.map(año => {
+                    const monto = data.corteEjercicios[año];
+                    totalProg += monto;
+                    return `
+                        <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-inst-oro/30 transition-all group/item">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-[10px] font-black text-slate-500 group-hover/item:border-inst-oro group-hover/item:text-inst-vino transition-colors">
+                                    ${año}
+                                </div>
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ejercicio Fiscal</span>
+                            </div>
+                            <span class="text-xs font-black text-slate-700 italic">${formatoMoneda(monto)}</span>
+                        </div>
+                    `;
+                }).join('');
+                document.getElementById('lbl-total-programado-global').textContent = formatoMoneda(totalProg);
+            } else {
+                containerEjer.innerHTML = `<div class="text-center text-slate-300 italic text-xs py-10">Sin periodos programados.</div>`;
+            }
+        }
 
-            if (estadoLabel.toLowerCase() === 'activo') colorEstado = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
-            else if (estadoLabel.toLowerCase() === 'finalizado') colorEstado = 'bg-blue-100 text-blue-800 border border-blue-200';
-            else if (estadoLabel.toLowerCase() === 'rescindido') colorEstado = 'bg-rose-100 text-rose-800 border border-rose-200';
-            else if (estadoLabel.toLowerCase() === 'suspendido') colorEstado = 'bg-amber-100 text-amber-800 border border-amber-200';
+        // 4. Renderizar Tabla de Contratos Recientes
+        const tbody = document.getElementById('dashboard-contratos-body');
+        if (tbody) {
+            if (!data.contratosRecientes || data.contratosRecientes.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="py-16 text-center text-sm font-bold text-slate-400 italic">No hay registros vigentes en la base de datos.</td></tr>`;
+                return;
+            }
 
-            htmlRows += `
-            <tr class="hover:bg-inst-crema/10 transition-all duration-200 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
-                <td class="px-5 py-5 border-b border-slate-50 bg-white">
-                    <p class="text-inst-vino font-black italic uppercase tracking-tight group-hover:translate-x-1 transition-transform duration-300">
-                        ${contrato.Numero_Contrato || '-'}
-                    </p>
-                </td>
-                <td class="px-5 py-5 border-b border-slate-50 bg-white">
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${colorEstado}">
-                        <span class="w-1.5 h-1.5 rounded-full mr-2 opacity-75 ${colorEstado.split(' ')[0].replace('bg-', 'bg-')}"></span>
-                        ${estadoLabel}
-                    </span>
-                </td>
-                <td class="px-5 py-5 border-b border-slate-50 bg-white">
-                    <p class="text-slate-700 font-black tracking-tighter">${formatoMoneda(contrato.Monto_Total_Con_IVA)}</p>
-                </td>
-                <td class="px-5 py-5 border-b border-slate-50 bg-white text-center">
-                    <button class="inline-flex items-center px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all duration-300">
-                        <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                        </svg>
-                        Ver Detalle
-                    </button>
-                </td>
-            </tr>
-            `;
-        });
+            tbody.innerHTML = data.contratosRecientes.map(c => {
+                const estado = c.Estado || 'N/A';
+                let style = 'bg-slate-100 text-slate-500 border-slate-200';
+                if (['activo', 'vigente'].includes(estado.toLowerCase())) style = 'bg-emerald-50 text-emerald-600 border-emerald-100';
+                else if (['finalizado', 'terminado'].includes(estado.toLowerCase())) style = 'bg-blue-50 text-blue-600 border-blue-100';
 
-        tbody.innerHTML = htmlRows;
+                return `
+                    <tr class="group hover:bg-slate-50 transition-all cursor-pointer" onclick="cargarVista('contrato_detalle.vw', { id: '${c.ID_Contrato}' })">
+                        <td class="px-6 py-5">
+                            <div class="flex flex-col">
+                                <span class="text-xs font-black text-inst-vino uppercase tracking-tight italic group-hover:translate-x-1 transition-transform">${c.Numero_Contrato}</span>
+                                <span class="text-[9px] font-bold text-slate-400 uppercase mt-0.5">Identificador de Obra</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-5">
+                            <div class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${style}">
+                                <span class="h-1.5 w-1.5 rounded-full mr-2 current-bg"></span>
+                                ${estado}
+                            </div>
+                        </td>
+                        <td class="px-6 py-5 text-right font-black text-slate-700 italic tracking-tighter text-sm">
+                            ${formatoMoneda(c.Monto_Total_Con_IVA)}
+                        </td>
+                        <td class="px-6 py-5 text-center">
+                            <button class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-50 text-slate-400 group-hover:bg-inst-vino group-hover:text-white transition-all shadow-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
     }
 
     // --- Controladores: Listado de Contratos --- //
@@ -307,21 +462,21 @@
 
             htmlRows += `
       <tr class="hover:bg-inst-crema/10 transition-all duration-200 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
-        <td class="px-8 py-5 border-b border-slate-50 bg-white">
+        <td class="px-8 py-2 border-b border-slate-50 bg-white">
             <p class="text-inst-vino font-black italic uppercase tracking-tight group-hover:translate-x-1 transition-transform duration-300">
                 ${contrato.Numero_Contrato || '-'}
             </p>
         </td>
-        <td class="px-8 py-5 border-b border-slate-50 bg-white">
+        <td class="px-8 py-2 border-b border-slate-50 bg-white">
           <p class="text-slate-600 font-bold truncate max-w-sm" title="${contrato.Objeto_Contrato || ''}">
             ${contrato.Objeto_Contrato || '-'}
           </p>
         </td>
-        <td class="px-8 py-5 border-b border-slate-50 bg-white text-right">
+        <td class="px-8 py-2 border-b border-slate-50 bg-white text-right">
             <p class="text-slate-900 font-black tracking-tighter">${formatoMonto}</p>
         </td>
-        <td class="px-8 py-5 border-b border-slate-50 bg-white text-center">
-            <span class="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${colorEstado}">
+        <td class="px-8 py-2 border-b border-slate-50 bg-white text-center">
+            <span class="inline-flex items-center px-1 py-1 rounded-full text-sm font-black uppercase tracking-wider shadow-sm ${colorEstado}">
                 <span class="w-1.5 h-1.5 rounded-full mr-2 opacity-75 ${colorEstado.split(' ')[0].replace('bg-', 'bg-')}"></span>
                 ${estadoLabel}
             </span>
@@ -411,7 +566,7 @@
         if (!thead || !tbody) return;
 
         if (!data || !data.meses || data.meses.length === 0) {
-            tbody.innerHTML = `<tr><td class="px-5 py-8 text-center text-gray-500 italic">No hay programa registrado.</td></tr>`;
+            tbody.innerHTML = `<tr><td class="px-2 py-8 text-center text-gray-500 italic">No hay programa registrado.</td></tr>`;
             return;
         }
 
@@ -424,10 +579,10 @@
         if (chipsContainer && chipsList) {
             chipsContainer.classList.remove('hidden');
             chipsList.innerHTML = data.meses.map(m => `
-                <div class="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-all group border-l-4 border-l-inst-oro">
-                    <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-inst-vino transition-colors">Periodo ${m.numero || '--'}</div>
-                    <div class="text-xs font-black text-inst-vino uppercase tracking-tighter">${m.label}</div>
-                    <div class="text-[9px] text-slate-400 mt-1 font-bold">${m.start} - ${m.end}</div>
+                <div class="bg-white border border-slate-100 p-2 rounded-2xl shadow-sm hover:shadow-md transition-all group border-l-4 border-l-inst-oro">
+                    <div class="text-sm font-black text-slate-400 uppercase tracking-wider mb-1 group-hover:text-inst-vino transition-colors">Periodo ${m.numero || '--'}</div>
+                    <div class="text-sm font-black text-inst-vino uppercase tracking-tighter">${m.label.replace('January', 'Enero').replace('February', 'Febrero').replace('March', 'Marzo').replace('April', 'Abril').replace('May', 'Mayo').replace('June', 'Junio').replace('July', 'Julio').replace('August', 'Agosto').replace('September', 'Septiembre').replace('October', 'Octubre').replace('November', 'Noviembre').replace('December', 'Diciembre')}</div>
+                    <div class="text-sm text-slate-400 mt-1 font-bold">${m.start} - ${m.end}</div>
                 </div>
             `).join('');
         }
@@ -453,19 +608,19 @@
         // 2. Cabecera Profesional Institutional (Separando Clave y Descripción)
         let headHtml = `
             <tr class="bg-rehilete-vino text-white border-b-4 border-inst-oro transition-all">
-                <th rowspan="2" class="px-6 py-5 border-r border-white/10 text-left sticky left-0 z-40 bg-inst-vino text-[10px] uppercase font-black tracking-widest">Clave</th>
-                <th rowspan="2" class="px-6 py-5 border-r border-white/10 text-left sticky left-[120px] z-40 bg-inst-vino min-w-[400px] text-[10px] uppercase font-black tracking-widest">Descripción del Concepto</th>
-                <th colspan="${data.meses.length}" class="px-6 py-3 border-b border-white/10 text-center text-[10px] uppercase font-black tracking-[0.3em] opacity-60">Calendario de Ejecución Programada</th>
-                <th rowspan="2" class="px-6 py-5 border-l border-white/10 text-right text-[10px] bg-inst-vino sticky right-0 z-40 font-black uppercase w-44">Importe Total</th>
+                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-left sticky left-0 z-40 bg-inst-vino text-base uppercase font-black tracking-tight">Clave</th>
+                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-left sticky left-[120px] z-40 bg-inst-vino min-w-[400px] text-base uppercase font-black tracking-tight">Descripción del Concepto</th>
+                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-right text-base bg-inst-vino sticky left-[520px] z-40 font-black uppercase w-56">Importe Total</th>
+                <th colspan="${data.meses.length}" class="px-6 py-2 border-b border-white/10 text-center text-sm uppercase font-black tracking-wider opacity-90">Calendario de Ejecución Programada</th>
             </tr>
             <tr class="bg-inst-vino/95 text-white/60 border-b border-white/5">
         `;
         data.meses.forEach(m => {
             headHtml += `
-                <th class="px-2 py-4 border-r border-white/5 text-center min-w-[170px]">
-                    <div class="text-[11px] font-black text-white uppercase tracking-tighter">${m.label}</div>
-                    <div class="text-[9px] text-white/40 font-black mt-0.5 tracking-widest">${m.start} - ${m.end}</div>
-                </th>`;
+            <th class="px-2 py-2 border-r border-white/5 text-center min-w-[200px]">
+                <div class="text-base font-black text-white uppercase tracking-tight">${m.label}</div>
+                <div class="text-sm text-white/70 font-black mt-0.5 tracking-wider">${m.start} - ${m.end}</div>
+            </th>`;
         });
         headHtml += '</tr>';
         thead.innerHTML = headHtml;
@@ -474,27 +629,37 @@
         let bodyHtml = '';
         data.conceptosMatriz.forEach(c => {
             let totalFila = 0;
+            // Pre-calcular total de la fila para la columna "Importe Total"
+            c.montos.forEach(m => {
+                totalFila += parseFloat(m) || 0;
+            });
+
             bodyHtml += `
                 <tr class="hover:bg-inst-crema/10 transition-all duration-200 border-b border-slate-50 group" data-id="${c.id}">
-                    <td class="px-6 py-5 border-r border-slate-50 bg-white sticky left-0 z-20 shadow-sm group-hover:bg-slate-50 text-xs font-black text-inst-vino uppercase tracking-tighter">${c.clave || '-'}</td>
-                    <td class="px-6 py-5 border-r border-slate-50 bg-white sticky left-[120px] z-20 shadow-sm group-hover:bg-slate-50 text-[13px] text-slate-600 font-medium leading-relaxed">${c.descripcion || '-'}</td>
+                <td class="px-6 py-6 border-r border-slate-50 bg-white sticky left-0 z-20 shadow-sm group-hover:bg-slate-50 text-base font-black text-inst-vino uppercase tracking-tight">${c.clave || '-'}</td>
+                <td class="px-6 py-6 border-r border-slate-50 bg-white sticky left-[120px] z-20 shadow-sm group-hover:bg-slate-50 text-base text-slate-600 font-medium leading-relaxed">${c.descripcion || '-'}</td>
+                <td class="px-6 py-6 border-r border-slate-100 text-right bg-slate-50/30 font-black text-inst-vino font-sans sticky left-[520px] z-20 group-hover:bg-slate-100 col-total-fila">
+                    <div class="text-base tracking-tighter">${formatoMoneda(totalFila)}</div>
+                    <div class="text-sm uppercase tracking-wider mt-1 indicator-remanente ${totalFila > (c.totalConcepto + 0.1) ? 'text-rose-600' : 'text-slate-400'}">
+                        ${totalFila < (c.totalConcepto - 0.1) ? 'Falta: ' + formatoMoneda(c.totalConcepto - totalFila) : (totalFila > (c.totalConcepto + 0.1) ? 'Exceso!' : 'Completo')}
+                    </div>
+                </td>
             `;
             c.montos.forEach((m, idx) => {
                 const montoVal = parseFloat(m) || 0;
-                totalFila += montoVal;
                 const pctRelativo = granTotal > 0 ? (montoVal / granTotal) : 0;
                 const style = montoVal > 0 ? 'text-slate-800' : 'text-slate-300';
                 const mes = data.meses[idx];
 
                 bodyHtml += `
-                    <td class="px-3 py-6 text-right border-r border-slate-50 relative group/cell">
+                    <td class="px-2 py-8 text-right border-r border-slate-50 relative group/cell">
                         <div contenteditable="true" 
                              oninput="recalcularFilaPrograma(this, 'monto')"
                              onfocus="this.dataset.original = this.innerText"
                              onblur="autoGuardarPeriodo(this)"
                              data-tipo="monto"
                              data-id-periodo="${mes.id}"
-                             class="text-sm font-black font-sans outline-none focus:ring-4 focus:ring-inst-oro/20 rounded-lg px-2 py-1 transition-all ${style}">${formatoMoneda(montoVal)}</div>
+                             class="text-base font-black font-sans outline-none focus:ring-4 focus:ring-inst-oro/20 rounded-lg px-1 py-1 transition-all ${style}">${formatoMoneda(montoVal)}</div>
                         
                         <div contenteditable="true"
                              oninput="recalcularFilaPrograma(this, 'pct')"
@@ -502,17 +667,10 @@
                              onblur="autoGuardarPeriodo(this)"
                              data-tipo="pct"
                              data-id-periodo="${mes.id}"
-                             class="text-xs text-inst-oro font-black mt-1 outline-none focus:ring-4 focus:ring-inst-oro/10 rounded px-2 inline-block transition-all tracking-tighter italic">${formatoPct4(pctRelativo)}</div>
+                             class="text-sm text-inst-oro font-black mt-1 outline-none focus:ring-4 focus:ring-inst-oro/10 rounded px-1 inline-block transition-all tracking-tighter italic">${formatoPct4(pctRelativo)}</div>
                     </td>`;
             });
-            bodyHtml += `
-                <td class="px-6 py-6 border-l border-slate-100 text-right bg-slate-50/30 font-black text-inst-vino font-sans sticky right-0 z-20 group-hover:bg-slate-100 col-total-fila">
-                    <div class="text-sm tracking-tighter">${formatoMoneda(totalFila)}</div>
-                    <div class="text-[9px] uppercase tracking-widest mt-1 indicator-remanente ${totalFila > (c.totalConcepto + 0.1) ? 'text-rose-600' : 'text-slate-400'}">
-                        ${totalFila < (c.totalConcepto - 0.1) ? 'Falta: ' + formatoMoneda(c.totalConcepto - totalFila) : (totalFila > (c.totalConcepto + 0.1) ? 'Exceso!' : 'Completo')}
-                    </div>
-                </td>
-            </tr>`;
+            bodyHtml += `</tr>`;
         });
 
         // 4. Totales Premium Institucionales
@@ -521,33 +679,37 @@
 
         // Fila 1: Importes
         let f1 = `<tr class="bg-slate-50/50 border-t-2 border-slate-200">
-            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-[10px] text-slate-400 uppercase font-black tracking-widest">Total Mensual (Importe)</td>`;
-        totalesVerticales.forEach(tv => f1 += `<td class="px-3 py-6 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(tv)}</td>`);
-        f1 += `<td class="px-6 py-6 text-right bg-slate-100 sticky right-0 z-30 font-black text-inst-vino text-sm border-l border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td></tr>`;
+            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-base text-slate-500 uppercase font-black tracking-tight">Total Mensual (Importe)</td>
+            <td class="px-6 py-8 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-base border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
+        totalesVerticales.forEach(tv => f1 += `<td class="px-2 py-8 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-base">${formatoMoneda(tv)}</td>`);
+        f1 += `</tr>`;
 
         // Fila 2: % Mensual
         let f2 = `<tr class="bg-white border-b border-slate-50">
-            <td colspan="2" class="px-6 py-4 sticky left-0 z-20 bg-white border-r border-slate-100 text-[10px] text-slate-300 uppercase font-bold italic tracking-widest">Incidencia Mensual (%)</td>`;
-        totalesVerticales.forEach(tv => f2 += `<td class="px-3 py-4 text-right text-inst-oro font-black text-sm border-r border-slate-50 italic tracking-tighter">${formatoPct4(granTotal > 0 ? tv / granTotal : 0)}</td>`);
-        f2 += `<td class="px-6 py-4 text-right bg-white sticky right-0 z-30 font-black text-slate-200 text-xs tracking-widest">--</td></tr>`;
+            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-white border-r border-slate-100 text-base text-slate-400 uppercase font-bold italic tracking-tight">Incidencia Mensual (%)</td>
+            <td class="px-6 py-6 text-right bg-white sticky left-[520px] z-30 font-black text-slate-300 text-sm tracking-wider border-r border-slate-100">--</td>`;
+        totalesVerticales.forEach(tv => f2 += `<td class="px-2 py-6 text-right text-inst-oro font-black text-base border-r border-slate-50 italic tracking-tighter">${formatoPct4(granTotal > 0 ? tv / granTotal : 0)}</td>`);
+        f2 += `</tr>`;
 
         // Fila 3: Acumulado Importe
         let f3 = `<tr class="bg-slate-50/50 border-t border-slate-100">
-            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-[10px] text-slate-400 uppercase font-black tracking-widest">Monto Acumulado Progrado</td>`;
+            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-base text-slate-500 uppercase font-black tracking-tight">Monto Acumulado Programado</td>
+            <td class="px-6 py-8 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-base border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
         totalesVerticales.forEach(tv => {
             acumuladoImporte += tv;
-            f3 += `<td class="px-3 py-6 text-right text-slate-600 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(acumuladoImporte)}</td>`;
+            f3 += `<td class="px-2 py-8 text-right text-slate-700 font-black border-r border-slate-100 font-sans text-base">${formatoMoneda(acumuladoImporte)}</td>`;
         });
-        f3 += `<td class="px-6 py-6 text-right bg-slate-100 sticky right-0 z-30 font-black text-inst-vino text-sm border-l border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td></tr>`;
+        f3 += `</tr>`;
 
         // Fila 4: Avance % (Highlight Institucional)
         let f4 = `<tr class="bg-rehilete-vino text-white font-black overflow-hidden relative">
-            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-inst-vino border-r border-white/10 text-[11px] uppercase tracking-[0.3em] italic text-inst-oro">Avance Programado (%)</td>`;
+            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-inst-vino border-r border-white/10 text-base uppercase tracking-tight italic text-inst-oro">Avance Programado (%)</td>
+            <td class="px-6 py-8 text-right bg-inst-vino sticky left-[520px] z-30 font-black text-white text-lg border-r border-white/10 shadow-2xl">100.00%</td>`;
         totalesVerticales.forEach(tv => {
             tempAcumTotal += tv;
-            f4 += `<td class="px-3 py-8 text-right border-r border-white/5 text-xl font-sans tracking-tight">${formatoPct4(granTotal > 0 ? tempAcumTotal / granTotal : 0)}</td>`;
+            f4 += `<td class="px-1 py-8 text-right border-r border-white/5 text-base font-sans tracking-tight">${formatoPct4(granTotal > 0 ? tempAcumTotal / granTotal : 0)}</td>`;
         });
-        f4 += `<td class="px-6 py-8 text-right bg-inst-vino sticky right-0 z-30 font-black text-inst-oro text-2xl border-l border-white/10 shadow-2xl">100.00%</td></tr>`;
+        f4 += `</tr>`;
 
         bodyHtml += f1 + f2 + f3 + f4;
         tbody.innerHTML = bodyHtml;
@@ -639,7 +801,7 @@
 
         if (badgeHeader) {
             badgeHeader.textContent = estadoStr.toUpperCase();
-            badgeHeader.className = "px-4 py-1.5 rounded-full text-sm font-black uppercase tracking-widest shadow-sm transition-all duration-300";
+            badgeHeader.className = "px-2 py-1 rounded-full text-sm font-black uppercase tracking-wider shadow-sm transition-all duration-300";
 
             if (estadoStr === 'activo') {
                 badgeHeader.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
@@ -899,7 +1061,7 @@
         if (!tbody) return;
 
         if (!data || data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-8 border-b border-gray-200 bg-white text-sm text-center text-gray-500 italic">No hay conceptos registrados.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="px-2 py-8 border-b border-gray-200 bg-white text-sm text-center text-gray-500 italic">No hay conceptos registrados.</td></tr>`;
             return;
         }
 
@@ -919,15 +1081,15 @@
 
             html += `
                 <tr class="hover:bg-inst-crema/10 transition-all duration-200 border-b border-slate-50 group" data-id="${c.ID_Concepto}">
-                    <td class="px-6 py-5 text-xs font-black text-inst-vino uppercase tracking-tighter celda-editable">${c.Clave || ''}</td>
-                    <td class="px-6 py-5 text-[13px] leading-relaxed text-slate-600 font-medium celda-editable">${c.Descripcion || ''}</td>
-                    <td class="px-6 py-5 text-center text-xs font-black text-slate-400 uppercase tracking-widest celda-editable">${c.Unidad || ''}</td>
+                    <td class="px-6 py-6 text-base font-black text-inst-vino uppercase tracking-tight celda-editable sticky left-0 z-20 bg-white group-hover:bg-slate-50 border-r border-slate-100 min-w-[120px] shadow-sm">${c.Clave || ''}</td>
+                    <td class="px-6 py-6 text-base leading-relaxed text-slate-600 font-medium celda-editable sticky left-[120px] z-20 bg-white group-hover:bg-slate-50 border-r border-slate-100 min-w-[400px] shadow-sm">${c.Descripcion || ''}</td>
+                    <td class="px-6 py-6 text-center text-base font-black text-slate-400 uppercase tracking-tight celda-editable">${c.Unidad || ''}</td>
                     <td onblur="formatearCelda(this, 'cantidad')" oninput="recalcularFila(this)"
-                        class="px-6 py-5 text-right text-sm font-black text-slate-700 font-sans col-cantidad celda-editable">${cantFormateada}</td>
+                        class="px-6 py-6 text-right text-base font-black text-slate-700 font-sans col-cantidad celda-editable">${cantFormateada}</td>
                     <td onblur="formatearCelda(this, 'precio')" oninput="recalcularFila(this)"
-                        class="px-6 py-5 text-right text-sm font-black text-slate-700 font-sans col-precio celda-editable">${formatoMoneda(pu)}</td>
-                    <td class="px-6 py-5 text-right text-sm font-black text-inst-vino font-sans col-importe bg-slate-50/30">${formatoMoneda(importe)}</td>
-                    <td class="px-6 py-5 text-center">
+                        class="px-6 py-6 text-right text-base font-black text-slate-700 font-sans col-precio celda-editable">${formatoMoneda(pu)}</td>
+                    <td class="px-6 py-6 text-right text-base font-black text-inst-vino font-sans col-importe bg-slate-50/30 w-56">${formatoMoneda(importe)}</td>
+                    <td class="px-6 py-2 text-center">
                         <div class="flex items-center justify-center space-x-2 opacity-40 group-hover:opacity-100 transition-opacity">
                             <div class="flex flex-col space-y-0.5">
                                  <button onclick="moverConcepto(this, 'up')" class="p-1 text-slate-400 hover:text-inst-vino hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
@@ -938,15 +1100,15 @@
                                  </button>
                             </div>
                             <button onclick="abrirDrillDownMatriz('${c.ID_Concepto}')" 
-                                class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-emerald-100" title="Ver Matriz">
+                                class="p-1 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-emerald-100" title="Ver Matriz">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
                             </button>
                             <button onclick="habilitarEdicionFila(this)" 
-                                class="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-blue-100 btn-editar-fila" title="Editar">
+                                class="p-1 text-blue-600 hover:bg-blue-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-blue-100 btn-editar-fila" title="Editar">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
                             <button onclick="eliminarConceptoUI('${c.ID_Concepto}')" 
-                                class="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-rose-100" title="Eliminar">
+                                class="p-1 text-rose-600 hover:bg-rose-50 rounded-xl transition-all shadow-sm border border-transparent hover:border-rose-100" title="Eliminar">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             </button>
                         </div>
@@ -960,45 +1122,42 @@
 
         html += `
             <tr class="bg-slate-50/50 border-t-2 border-slate-200">
-                <td colspan="5" class="px-6 py-6 border-r border-slate-100">
+                <td colspan="5" class="px-6 py-6 border-r border-slate-100 sticky left-0 z-20 bg-slate-50">
                     <div class="flex items-center space-x-3 opacity-30">
                         <div class="h-px w-12 bg-inst-vino"></div>
-                        <span class="text-[9px] font-black uppercase tracking-[0.4em] text-inst-vino">Resumen Financiero del Catálogo</span>
+                        <span class="text-base font-black uppercase tracking-[0.4em] text-inst-vino">Resumen Financiero del Catálogo</span>
                     </div>
                 </td>
-                <td class="px-6 py-6 text-right">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Subtotal</p>
-                    <p class="text-lg font-black text-slate-700 tracking-tighter">${formatoMoneda(subtotalGeneral)}</p>
+                <td colspan="2" class="px-6 py-8 text-right bg-slate-50">
+                    <p class="text-sm font-black text-slate-400 uppercase tracking-wider mb-1">Subtotal</p>
+                    <p class="text-base font-black text-slate-700 tracking-tighter">${formatoMoneda(subtotalGeneral)}</p>
                 </td>
-                <td class="px-6 py-6"></td>
             </tr>
             <tr class="bg-white border-t border-slate-100">
-                <td colspan="5" class="px-6 py-4 border-r border-slate-100"></td>
-                <td class="px-6 py-4 text-right">
-                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">I.V.A. (16.00%)</p>
-                    <p class="text-lg font-black text-slate-500 tracking-tighter">${formatoMoneda(iva)}</p>
+                <td colspan="5" class="px-6 py-2 border-r border-slate-100 sticky left-0 z-20 bg-white"></td>
+                <td colspan="2" class="px-6 py-6 text-right bg-white">
+                    <p class="text-sm font-black text-slate-400 uppercase tracking-wider mb-1">I.V.A. (16.00%)</p>
+                    <p class="text-base font-black text-slate-500 tracking-tighter">${formatoMoneda(iva)}</p>
                 </td>
-                <td class="px-6 py-4"></td>
             </tr>
             <tr class="bg-rehilete-crema border-t-4 border-inst-oro">
-                <td colspan="5" class="px-6 py-8 border-r border-inst-oro/10">
+                <td colspan="5" class="px-6 py-8 border-r border-inst-oro/10 sticky left-0 z-20 bg-inst-crema">
                     <div class="flex items-center space-x-4">
-                        <div class="p-3 bg-inst-vino rounded-2xl shadow-lg shadow-inst-vino/20">
+                        <div class="p-1 bg-inst-vino rounded-2xl shadow-lg shadow-inst-vino/20">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
                         </div>
                         <div>
-                            <h4 class="text-xs font-black text-inst-vino uppercase tracking-[0.2em]">Importe Total Contractual</h4>
-                            <p class="text-[10px] font-bold text-inst-vino/60 uppercase tracking-widest mt-0.5">Incluye Impuesto al Valor Agregado</p>
+                            <h4 class="text-base font-black text-inst-vino uppercase tracking-wider">Importe Total Contractual</h4>
+                            <p class="text-sm font-bold text-inst-vino/60 uppercase tracking-wider mt-0.5">Incluye Impuesto al Valor Agregado</p>
                         </div>
                     </div>
                 </td>
-                <td class="px-6 py-8 text-right bg-inst-vino shadow-2xl">
-                    <p class="text-[10px] font-black text-white/50 uppercase tracking-widest mb-1">Total con IVA</p>
-                    <p class="text-3xl font-black text-white tracking-tighter">${formatoMoneda(totalConIva)}</p>
+                <td colspan="2" class="px-6 py-10 text-right bg-inst-vino shadow-2xl">
+                    <p class="text-sm font-black text-white/50 uppercase tracking-wider mb-1">Total con IVA</p>
+                    <p class="text-2xl font-black text-white tracking-tighter">${formatoMoneda(totalConIva)}</p>
                 </td>
-                <td class="px-6 py-8 bg-inst-vino"></td>
             </tr>`;
 
         tbody.innerHTML = html;
@@ -1650,22 +1809,22 @@
             const isLocked = idx > 0;
 
             return `
-            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${p.ID_Programa_Periodo}">
+            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-2 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${p.ID_Programa_Periodo}">
                 <div class="flex items-center space-x-3 min-w-[100px]">
-                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-xs font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${idx + 1}</span>
+                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-sm font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${idx + 1}</span>
                     <div class="text-sm font-black text-slate-500 uppercase tracking-tighter">P.${idx + 1}</div>
                 </div>
                 <div class="flex-1 w-full">
-                    <input type="text" value="${p.Periodo || ''}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
+                    <input type="text" value="${p.Periodo || ''}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
                 </div>
                 <div class="flex items-center space-x-2 w-full md:w-auto">
                     <input type="date" value="${fIni}" ${isLocked ? 'readonly' : ''} onchange="recalcularContinuidadModal()"
-                        class="input-periodo-inicio ${isLocked ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
-                    <span class="text-slate-300 text-xs text-center w-4">➡</span>
+                        class="input-periodo-inicio ${isLocked ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                    <span class="text-slate-300 text-sm text-center w-4">➡</span>
                     <input type="date" value="${fFin}" onchange="recalcularContinuidadModal()"
-                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
                 </div>
-                <button onclick="eliminarPeriodoModal('${p.ID_Programa_Periodo}')" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
+                <button onclick="eliminarPeriodoModal('${p.ID_Programa_Periodo}')" class="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                 </button>
             </div>`;
@@ -1725,22 +1884,22 @@
         const tempId = "new_" + Date.now();
         const num = rows.length + 1;
         const html = `
-            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${tempId}">
+            <div class="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 p-2 bg-slate-50 rounded-xl border border-slate-100 hover:border-inst-vino transition-all group" data-id-periodo-edit="${tempId}">
                 <div class="flex items-center space-x-3 min-w-[100px]">
-                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${num}</span>
-                    <div class="text-[11px] font-black text-slate-500 uppercase tracking-tighter">P.${num}</div>
+                    <span class="w-7 h-7 bg-white rounded-full flex items-center justify-center text-sm font-black text-slate-400 border border-slate-200 group-hover:bg-inst-vino group-hover:text-white group-hover:border-inst-vino transition-all">${num}</span>
+                    <div class="text-sm font-black text-slate-500 uppercase tracking-tighter">P.${num}</div>
                 </div>
                 <div class="flex-1 w-full">
-                    <input type="text" value="Periodo ${num}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
+                    <input type="text" value="Periodo ${num}" class="input-periodo-label w-full bg-white border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-vino transition-all outline-none" placeholder="Nombre del periodo">
                 </div>
                 <div class="flex items-center space-x-2 w-full md:w-auto">
                     <input type="date" value="${startStr}" ${num > 1 ? 'readonly' : ''} onchange="recalcularContinuidadModal()"
-                        class="input-periodo-inicio ${num > 1 ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
-                    <span class="text-slate-300 text-xs text-center w-4">➜</span>
+                        class="input-periodo-inicio ${num > 1 ? 'bg-slate-100 text-slate-400' : 'bg-white'} border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                    <span class="text-slate-300 text-sm text-center w-4">➜</span>
                     <input type="date" value="${endStr}" onchange="recalcularContinuidadModal()"
-                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
+                        class="input-periodo-fin bg-white border border-slate-200 rounded-lg px-1 py-1 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-inst-vino transition-all outline-none">
                 </div>
-                <button onclick="this.closest('[data-id-periodo-edit]').remove(); recalcularItemsModal();" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
+                <button onclick="this.closest('[data-id-periodo-edit]').remove(); recalcularItemsModal();" class="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Eliminar periodo">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                 </button>
             </div>`;
@@ -1753,7 +1912,7 @@
         document.getElementById('lbl-total-periodos').innerText = `${rows.length} Periodos`;
         rows.forEach((row, idx) => {
             const span = row.querySelector('span');
-            const divNum = row.querySelector('.text-[11px]');
+            const divNum = row.querySelector('.text-sm');
             if (span) span.innerText = idx + 1;
             if (divNum) divNum.innerText = `P.${idx + 1}`;
         });
@@ -1886,20 +2045,23 @@
     };
 
     window.setImportType = function (tipo) {
-        document.getElementById('import-type-actual').value = tipo;
         const btnContrato = document.getElementById('btn-import-type-contrato');
         const btnMatriz = document.getElementById('btn-import-type-matriz');
+        const btnEstimacion = document.getElementById('btn-import-type-estimacion');
+        const btnFactura = document.getElementById('btn-import-type-factura');
 
-        if (tipo === 'Contratos') {
-            btnContrato.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
-            btnContrato.classList.remove('text-slate-500');
-            btnMatriz.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
-            btnMatriz.classList.add('text-slate-500');
-        } else {
-            btnMatriz.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
-            btnMatriz.classList.remove('text-slate-500');
-            btnContrato.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
-            btnContrato.classList.add('text-slate-500');
+        // Reset all
+        [btnContrato, btnMatriz, btnEstimacion, btnFactura].forEach(b => {
+            if (b) {
+                b.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
+                b.classList.add('text-slate-500');
+            }
+        });
+
+        const activeBtn = document.getElementById(`btn-import-type-${tipo.toLowerCase().replace('_insumos', 'matriz').replace('estimaciones', 'estimacion').replace('facturas', 'factura')}`);
+        if (activeBtn) {
+            activeBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
+            activeBtn.classList.remove('text-slate-500');
         }
     };
 
@@ -1975,13 +2137,20 @@
 
             const parentContext = {
                 ID_Contrato: window.idContratoActual || null,
-                ID_Concepto: window.idConceptoMatrizActual || null
+                ID_Concepto: window.idConceptoMatrizActual || null,
+                ID_Estimacion: window.idEstimacionActual || null,
+                No_Estimacion: window.noEstimacionActual || null,
+                Objeto_Contrato: window.objetoContratoActual || null,
+                Monto_Total_Contrato: window.montoTotalContratoActual || null
             };
 
             google.script.run
                 .withSuccessHandler(function (resIA) {
                     if (resIA && resIA.success) {
-                        const datosExtraidos = resIA.data;
+                        const datosExtraidos = resIA.data.datos || resIA.data; // Compatibilidad con estructura nueva o vieja
+                        const informeAuditoria = resIA.data.informe_auditoria || null;
+                        const checklistAuditoria = resIA.data.checklist_auditoria || null;
+
                         updateAIStatus(true, "Sincronizando Catálogo...", "Haciendo match inteligente de conceptos por descripción");
 
                         google.script.run
@@ -1990,10 +2159,29 @@
                                     const cambios = resDiff.data;
                                     cerrarModalImportacionIA();
 
-                                    if (cambios.length > 0) {
-                                        mostrarAdvertenciaCambiosIA(cambios, datosExtraidos);
-                                    } else {
-                                        ejecutarGuardadoIA(datosExtraidos);
+                                    mostrarAdvertenciaCambiosIA(cambios, datosExtraidos, informeAuditoria);
+
+                                    // Renderizar checklist en el panel de auditoría de la estimación
+                                    if (checklistAuditoria && typeof renderizarChecklistAuditoria === 'function') {
+                                        renderizarChecklistAuditoria(checklistAuditoria);
+                                    }
+
+                                    // Persistir resultado de auditoría en Validacion_Archivos
+                                    if (window.idEstimacionActual && (checklistAuditoria || informeAuditoria)) {
+                                        const tipoArchivo = 'CARATULA_GENERADOR'; // Default; se puede expandir para 'FACTURA_BORRADOR'
+                                        const estadoVal = informeAuditoria
+                                            ? (informeAuditoria.estado_validacion === 'CORRECTO' ? 'APROBADO' : 'CON_ERRORES')
+                                            : 'PENDIENTE';
+                                        const observaciones = informeAuditoria
+                                            ? (informeAuditoria.observaciones || []).join(' | ')
+                                            : '';
+                                        google.script.run.guardarValidacionArchivo(
+                                            window.idEstimacionActual,
+                                            tipoArchivo,
+                                            estadoVal,
+                                            checklistAuditoria || [],
+                                            observaciones
+                                        );
                                     }
                                 } else {
                                     updateAIStatus(true, "Error en comparativa", resDiff.error || "No se pudo analizar los cambios");
@@ -2044,16 +2232,69 @@
             titulo.innerText = "Importador de Contratos";
             subtitulo.innerText = "Carga contratos o convenios modificatorios";
             helpText.innerText = "Soporta PDF, Imagen y Excel de Contratos";
-            iconContainer.classList.remove('bg-purple-50', 'text-purple-500');
+            iconContainer.classList.remove('bg-purple-50', 'text-purple-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
             iconContainer.classList.add('bg-blue-50', 'text-blue-500');
         } else if (tipo === 'Matriz_Insumos') {
             titulo.innerText = "Importador de Matrices";
             subtitulo.innerText = "Análisis de Precios Unitarios (Insumos)";
             helpText.innerText = "Soporta documentos de Matrices (PDF, Imagen, Excel)";
-            iconContainer.classList.remove('bg-blue-50', 'text-blue-500');
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
             iconContainer.classList.add('bg-purple-50', 'text-purple-500');
+        } else if (tipo === 'Estimaciones') {
+            titulo.innerText = "Auditoría de Documento (IA)";
+            subtitulo.innerText = "Validación Matemática y Cotejo vs Sistema";
+            helpText.innerText = "Carga el PDF/JPG de la Estimación para validar";
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-purple-50', 'text-purple-500');
+            iconContainer.classList.add('bg-emerald-50', 'text-emerald-500');
+        } else if (tipo === 'Facturas') {
+            titulo.innerText = "Validador de Facturas";
+            subtitulo.innerText = "Cotejo contra Estimaciones Autorizadas";
+            helpText.innerText = "Carga Facturas CFDI / PDF para validación";
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-purple-50', 'text-purple-500');
+            iconContainer.classList.add('bg-amber-50', 'text-amber-500');
+        } else if (tipo === 'CAF') {
+            titulo.innerText = "Importador de CAF / Suficiencia";
+            subtitulo.innerText = "Convenio de Aportación o Autorización";
+            helpText.innerText = "Soporta documentos de CAF o Suficiencia (PDF, Imagen)";
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-purple-50', 'text-purple-500', 'bg-amber-50', 'text-amber-500');
+            iconContainer.classList.add('bg-emerald-50', 'text-emerald-500');
+        } else if (tipo === 'Programa') {
+            titulo.innerText = "Importador de Programa de Obra";
+            subtitulo.innerText = "Calendario de Ejecución y Metas";
+            helpText.innerText = "Soporta PDF o Excel de Programa de Obra";
+            iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
+            iconContainer.classList.add('bg-purple-50', 'text-purple-500');
+        } else if (tipo === 'Batch') {
+            titulo.innerText = "Procesamiento Maestro por Lotes";
+            subtitulo.innerText = "Expediente Técnico Completo";
+            helpText.innerText = "Analizando y vinculando documentos en secuencia automática";
+            iconContainer.classList.className = "w-20 h-20 bg-inst-vino text-inst-oro rounded-2xl flex items-center justify-center mb-6 animate-pulse";
         }
     }
+
+    window.abrirImportadorIAEstimaciones = function () {
+        configurarRebrandModalIA('Estimaciones');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    window.abrirImportadorIAFacturas = function () {
+        configurarRebrandModalIA('Facturas');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    window.abrirImportadorIACAF = function () {
+        configurarRebrandModalIA('CAF');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    window.abrirImportadorIAPrograma = function () {
+        configurarRebrandModalIA('Programa');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
 
     /**
      * Abre el importador IA pre-configurado para Matrices de forma global.
@@ -2086,10 +2327,162 @@
         inicializarImportadorIA();
     };
 
-    function mostrarAdvertenciaCambiosIA(cambios, datosCompletos) {
+    /**
+     * ORQUESTADOR DE IMPORTACIÓN POR LOTES (BATCH)
+     * Procesa secuencialmente: 1. Contrato -> 2. CAF -> 3. Programa -> 4. APU
+     */
+    window.lanzarOrquestadorBatchIA = async function (queue) {
+        const order = [1, 2, 3, 4];
+        const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos' };
+
+        // Mostrar Modal de IA y ponerlo en modo "Batch"
+        configurarRebrandModalIA('Batch');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        updateAIStatus(true, "Iniciando Lote...", "Preparando secuencia de 4 documentos");
+
+        try {
+            for (let step of order) {
+                const file = queue[step];
+                if (!file) continue;
+
+                updateAIStatus(true, `Paso ${step}/4: Procesando ${types[step]}`, `Leyendo y analizando ${file.name}...`);
+
+                // Convertir archivo a base64
+                const base64Data = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+
+                // Simular el flujo de handleFilesIA pero de forma controlada y lineal
+                await procesarPasoBatch(base64Data, file.type, types[step]);
+            }
+
+            Swal.fire({
+                title: 'Lote Completado',
+                text: 'Se han procesado todos los documentos del expediente.',
+                icon: 'success',
+                confirmButtonColor: '#611232'
+            });
+            cerrarModalImportacionIA();
+            if (typeof inicializarContratos === 'function') inicializarContratos();
+
+        } catch (error) {
+            console.error("Error en Batch:", error);
+            updateAIStatus(true, "Error en Lote", error.message || "Ocurrió un error en el procesamiento");
+            setTimeout(() => updateAIStatus(false), 5000);
+        }
+    };
+
+    /**
+     * Helper para procesar un paso individual del batch de forma asíncrona (Promisified google.script.run)
+     */
+    async function procesarPasoBatch(content, mimeType, targetTable) {
+        const context = {
+            ID_Contrato: window.idContratoActual || null,
+            ID_Concepto: window.idConceptoMatrizActual || null
+        };
+
+        // 1. Llamada a la IA
+        const resIA = await new Promise((resolve, reject) => {
+            google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(reject)
+                .processDocumentWithAI(content, mimeType, targetTable, context);
+        });
+
+        if (!resIA || !resIA.success) throw new Error(resIA?.error || "IA falló en " + targetTable);
+
+        const extracted = resIA.data.datos || resIA.data;
+
+        // 2. Analizar Cambios (Match/Diff)
+        const resDiff = await new Promise((resolve, reject) => {
+            google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(reject)
+                .analizarCambiosIA(extracted);
+        });
+
+        if (!resDiff || !resDiff.success) throw new Error("Error en comparativa de " + targetTable);
+
+        // 3. Guardado Automático (En Batch no pedimos confirmación de advertencias a menos que sea crítico?)
+        // Por ahora, guardamos directamente para permitir flujo fluido, o podríamos mostrar un 'Review' rápido?
+        // El usuario pidió "Cargar todos para comenzar", implicando un proceso automatizado.
+        const resSave = await new Promise((resolve, reject) => {
+            google.script.run
+                .withSuccessHandler(resolve)
+                .withFailureHandler(reject)
+                .guardarDatosIA(extracted);
+        });
+
+        if (!resSave || !resSave.success) throw new Error("Error guardando datos de " + targetTable);
+
+        // Actualizar estados globales si es Contrato para que los siguientes pasos tengan ID
+        if (targetTable === 'Contratos' && resSave.detalles && resSave.detalles.id_contrato) {
+            window.idContratoActual = resSave.detalles.id_contrato;
+        }
+
+        return resSave;
+    }
+
+    function mostrarAdvertenciaCambiosIA(cambios, datosCompletos, informeAuditoria = null) {
         const listContainer = document.getElementById('lista-cambios-ia');
+        const auditContainer = document.getElementById('informe-auditoria-ia');
+        const auditBadge = document.getElementById('audit-badge');
+        const auditObs = document.getElementById('audit-observations');
+
+        // Elementos del Header del Modal para Sincronización
+        const modalHeader = document.getElementById('modal-header-ia-war');
+        const modalTitulo = document.getElementById('modal-titulo-ia-war');
+        const modalIcono = document.getElementById('modal-icono-ia-war');
+        const svgHeader = document.getElementById('svg-header-auditoria');
+
         listContainer.innerHTML = '';
 
+        // 1. Manejar Informe de Auditoría y Sincronizar Header
+        if (informeAuditoria) {
+            auditContainer.classList.remove('hidden');
+            const esCorrecto = (informeAuditoria.estado_validacion === "CORRECTO");
+
+            // Actualizar Badge Interno
+            auditBadge.innerText = esCorrecto ? "Validación Correcta" : "Discrepancias en Auditoría";
+            auditBadge.className = `px-4 py-1.5 rounded-lg text-sm font-black uppercase tracking-wider shadow-lg ${esCorrecto ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-rose-500 shadow-rose-500/20'} text-white`;
+
+            // SINCRONIZAR HEADER DEL MODAL (Feedback Visual Principal)
+            if (esCorrecto) {
+                modalHeader.className = "bg-emerald-600 px-8 py-5 text-white relative overflow-hidden border-b-4 border-emerald-700 transition-all duration-500";
+                modalTitulo.innerText = "Validación Exitosa";
+                if (svgHeader) {
+                    svgHeader.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                }
+            } else {
+                modalHeader.className = "bg-amber-500 px-8 py-5 text-white relative overflow-hidden border-b-4 border-amber-600 transition-all duration-500";
+                modalTitulo.innerText = "Discrepancias Detectadas";
+                if (svgHeader) {
+                    svgHeader.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
+                }
+            }
+
+            auditObs.innerHTML = (informeAuditoria.observaciones || []).map(o => `<li>${o}</li>`).join('');
+        } else {
+            auditContainer.classList.add('hidden');
+            // Reset a estado default si no hay informe
+            modalHeader.className = "bg-amber-500 px-8 py-5 text-white relative overflow-hidden border-b-4 border-amber-600 transition-all duration-500";
+            modalTitulo.innerText = "Revisión de Cambios";
+        }
+
+        const tipoImportacion = document.getElementById('import-type-actual').value;
+        const esAuditoriaSolo = (tipoImportacion === 'Estimaciones');
+
+        // Si no hay cambios y no hay reporte de error, procedemos directo (EXCEPTO EN AUDITORIA)
+        if (cambios.length === 0 && (!informeAuditoria || informeAuditoria.estado_validacion === "CORRECTO")) {
+            if (!esAuditoriaSolo) {
+                ejecutarGuardadoIA(datosCompletos);
+                return;
+            }
+        }
+
+        // De lo contrario, mostrar modal de revisión
         // Agrupar por numContrato
         const grupos = {};
         cambios.forEach((c, index) => {
@@ -2100,7 +2493,7 @@
 
         Object.keys(grupos).forEach(num => {
             const groupDiv = document.createElement('div');
-            groupDiv.className = 'bg-slate-50/50 rounded-2xl p-5 border border-slate-100 mb-6 shadow-sm';
+            groupDiv.className = 'bg-slate-50/50 rounded-2xl p-2 border border-slate-100 mb-6 shadow-sm';
 
             const itemsHtml = grupos[num].map(c => {
                 const isVal = c.tipo === "VALIDACION";
@@ -2109,35 +2502,35 @@
                 const textColor = isVal ? 'text-amber-900 font-black' : 'text-slate-700';
 
                 return `
-                    <div class="${bgColor} border rounded-xl p-4 transition-all hover:shadow-md mb-3" id="change-item-${c.id_interno}">
+                    <div class="${bgColor} border rounded-xl p-2 transition-all hover:shadow-md mb-3" id="change-item-${c.id_interno}">
                         <div class="flex items-center justify-between mb-3">
                             <div class="flex items-center space-x-2">
-                                <span class="text-xs font-black uppercase tracking-widest ${labelColor}">${c.campo.replace(/_/g, ' ')}</span>
-                                ${isVal ? '<span class="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">ERROR DE VALIDACIÓN</span>' : ''}
+                                <span class="text-sm font-black uppercase tracking-wider ${labelColor}">${c.campo.replace(/_/g, ' ')}</span>
+                                ${isVal ? '<span class="bg-amber-500 text-white text-sm px-1 py-0.5 rounded-full font-bold">ERROR DE VALIDACIÓN</span>' : ''}
                             </div>
                             <!-- Botón de Acción Individual -->
                             <div class="flex items-center space-x-2">
                                 <label class="flex items-center cursor-pointer group">
                                     <input type="checkbox" checked data-index="${c.id_interno}" class="sr-only peer input-cambio-ia">
                                     <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 relative transition-all"></div>
-                                    <span class="ml-2 text-xs font-bold text-slate-400 peer-checked:text-blue-600">Aplicar</span>
+                                    <span class="ml-2 text-sm font-bold text-slate-400 peer-checked:text-blue-600">Aplicar</span>
                                 </label>
                             </div>
                         </div>
-                        <div class="grid grid-cols-11 gap-3 text-sm items-center">
-                            <div class="col-span-5 bg-red-50/50 text-red-600 p-2 rounded-lg border border-red-50 italic truncate" title="${c.valorActual}">
-                                <span class="block text-xs uppercase font-bold opacity-50 mb-0.5">DB Actual</span>
+                        <div class="grid grid-cols-11 gap-1 text-sm items-center">
+                            <div class="col-span-5 bg-red-50/50 text-red-600 p-1 rounded-lg border border-red-50 italic truncate" title="${c.valorActual}">
+                                <span class="block text-sm uppercase font-bold opacity-50 mb-0.5">DB Actual</span>
                                 ${c.valorActual || '(Vacío)'}
                             </div>
                             <div class="col-span-1 text-center text-slate-300">
                                 <svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                             </div>
-                            <div class="col-span-5 bg-green-50/50 text-green-700 p-2 rounded-lg border border-green-50 font-black truncate" title="${c.valorIA}">
-                                <span class="block text-xs uppercase font-bold opacity-50 mb-0.5">Sugerido IA</span>
+                            <div class="col-span-5 bg-green-50/50 text-green-700 p-1 rounded-lg border border-green-50 font-black truncate" title="${c.valorIA}">
+                                <span class="block text-sm uppercase font-bold opacity-50 mb-0.5">Sugerido IA</span>
                                 ${c.valorIA}
                             </div>
                         </div>
-                        ${c.nota ? `<p class="mt-2 text-xs text-amber-600 font-medium italic flex items-center"><svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>${c.nota}</p>` : ''}
+                        ${c.nota ? `<p class="mt-2 text-sm text-amber-600 font-medium italic flex items-center"><svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>${c.nota}</p>` : ''}
                     </div>
                 `;
             }).join('');
@@ -2148,7 +2541,7 @@
                         <span class="w-2.5 h-2.5 bg-amber-500 rounded-full mr-2.5 shadow-sm shadow-amber-200"></span>
                         REFERENCIA: <span class="ml-2 text-blue-600">${num}</span>
                     </h4>
-                    <span class="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">${grupos[num].length} hallazgos</span>
+                    <span class="text-sm font-bold text-slate-400 bg-slate-100 px-1 py-1 rounded-full">${grupos[num].length} hallazgos</span>
                 </div>
                 <div class="space-y-1">
                     ${itemsHtml}
@@ -2158,31 +2551,41 @@
         });
 
         const btnConfirm = document.getElementById('btn-confirmar-cambios-ia');
-        btnConfirm.onclick = function () {
-            // Filtrar cambios aceptados
-            const inputs = document.querySelectorAll('.input-cambio-ia');
-            const idsAceptados = Array.from(inputs).filter(i => i.checked).map(i => parseInt(i.dataset.index));
 
-            // Re-procesar datosCompletos para descartar lo NO seleccionado
-            const cambiosRechazados = cambios.filter(c => !idsAceptados.includes(c.id_interno));
+        if (esAuditoriaSolo) {
+            btnConfirm.innerText = "Cerrar Auditoría";
+            btnConfirm.className = "bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2 rounded-[1.5rem] text-sm font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition-all";
+            btnConfirm.onclick = function () {
+                cerrarModalAdvertenciaIA();
+            };
+        } else {
+            btnConfirm.innerText = "Actualizar Datos";
+            btnConfirm.className = "bg-inst-vino hover:bg-inst-negro text-white px-8 py-2 rounded-[1.5rem] text-sm font-black uppercase tracking-wider shadow-lg shadow-inst-vino/20 transition-all";
+            btnConfirm.onclick = function () {
+                // Filtrar cambios aceptados
+                const inputs = document.querySelectorAll('.input-cambio-ia');
+                const idsAceptados = Array.from(inputs).filter(i => i.checked).map(i => parseInt(i.dataset.index));
 
-            // Si hay cambios rechazados, restaurar los valores originales en datosCompletos
-            cambiosRechazados.forEach(c => {
-                const registroIA = datosCompletos[c.tabla].find(r =>
-                    (c.tabla === 'Catalogo_Conceptos' && r.Clave === c.numContrato) ||
-                    (r.Numero_Contrato === c.numContrato) ||
-                    (r.Numero_Acuerdo === c.numContrato)
-                );
-                if (registroIA) {
-                    // Restaurar el valor de la DB (ignoramos la sugerencia de la IA)
-                    // Nota: Si el valor original era (Vacío), lo ponemos como null
-                    registroIA[c.campo] = (c.valorActual === "(Vacío)") ? null : c.valorActual;
-                }
-            });
+                // Re-procesar datosCompletos para descartar lo NO seleccionado
+                const cambiosRechazados = cambios.filter(c => !idsAceptados.includes(c.id_interno));
 
-            cerrarModalAdvertenciaIA();
-            ejecutarGuardadoIA(datosCompletos);
-        };
+                // Si hay cambios rechazados, restaurar los valores originales en datosCompletos
+                cambiosRechazados.forEach(c => {
+                    const registroIA = datosCompletos[c.tabla].find(r =>
+                        (c.tabla === 'Catalogo_Conceptos' && r.Clave === c.numContrato) ||
+                        (r.Numero_Contrato === c.numContrato) ||
+                        (r.Numero_Acuerdo === c.numContrato)
+                    );
+                    if (registroIA) {
+                        // Restaurar el valor de la DB (ignoramos la sugerencia de la IA)
+                        registroIA[c.campo] = (c.valorActual === "(Vacío)") ? null : c.valorActual;
+                    }
+                });
+
+                cerrarModalAdvertenciaIA();
+                ejecutarGuardadoIA(datosCompletos);
+            };
+        }
 
         document.getElementById('modal-advertencia-ia').classList.remove('hidden');
     }
@@ -2208,6 +2611,27 @@
                     if (modalIA && !modalIA.classList.contains('hidden')) {
                         updateAIStatus(true, "¡Éxito!", "Importación completada correctamente");
                         setTimeout(() => cerrarModalImportacionIA(), 2000);
+                        // Si estamos en la vista de importación maestra, actualizar el wizard
+                        if (window.view_active === 'importacion_maestra.vw') {
+                            const tipoImportacion = document.getElementById('import-type-actual') ? document.getElementById('import-type-actual').value : null;
+                            if (tipoImportacion) {
+                                let stepNum = 0;
+                                if (tipoImportacion === 'Contratos') stepNum = 1;
+                                else if (tipoImportacion === 'CAF') stepNum = 2;
+                                else if (tipoImportacion === 'Programa') stepNum = 3;
+                                else if (tipoImportacion === 'Matriz_Insumos') stepNum = 4;
+
+                                if (stepNum > 0 && !window.wizardStateIA.completed.includes(stepNum)) {
+                                    window.wizardStateIA.completed.push(stepNum);
+                                    if (window.wizardStateIA.step === stepNum) {
+                                        window.wizardStateIA.step = stepNum + 1;
+                                    }
+                                }
+                                if (typeof window.actualizarWizardSequencial === 'function') {
+                                    window.actualizarWizardSequencial();
+                                }
+                            }
+                        }
                     } else {
                         notificarExito("Importación exitosa.");
                     }
@@ -2249,7 +2673,7 @@
         // 2. Mostrar modal y cargando
         const modal = document.getElementById('modal-drilldown-matriz');
         modal.classList.remove('hidden');
-        document.getElementById('tabla-matriz-body').innerHTML = `<tr><td colspan="7" class="px-5 py-8 text-sm text-center text-slate-500 italic animate-pulse">Consultando análisis de insumos...</td></tr>`;
+        document.getElementById('tabla-matriz-body').innerHTML = `<tr><td colspan="7" class="px-2 py-8 text-sm text-center text-slate-500 italic animate-pulse">Consultando análisis de insumos...</td></tr>`;
 
         // 3. Obtener datos del concepto desde window.contratoActual (ya cargado en vista detalle)
         // O buscarlo en la lista si es necesario. Como estamos en la pestaña catálogo, 
@@ -2303,7 +2727,7 @@
         const contrato = data.contrato || {};
 
         if (!insumos || insumos.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-5 py-8 text-sm text-center text-slate-400 italic">No hay insumos registrados para este concepto. Utiliza el importador IA para cargar la matriz.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="px-2 py-8 text-sm text-center text-slate-400 italic">No hay insumos registrados para este concepto. Utiliza el importador IA para cargar la matriz.</td></tr>`;
             countLbl.innerText = "0";
             return;
         }
@@ -2339,13 +2763,13 @@
             // Header del Grupo
             html += `
                 <tr class="bg-slate-50 cursor-pointer group hover:bg-slate-100 transition-colors" onclick="toggleGrupoMatriz('${idGrupo}')">
-                    <td colspan="6" class="px-4 py-2 text-xs font-black text-slate-500 uppercase tracking-widest">
+                    <td colspan="6" class="px-2 py-1 text-sm font-black text-slate-500 uppercase tracking-wider">
                         <div class="flex items-center">
                             <span class="mr-2 transform transition-transform group-collapsed:rotate-0 rotate-90" id="icon-${idGrupo}">▼</span>
                             <span>${g.icon} ${g.nombre}</span>
                         </div>
                     </td>
-                    <td class="px-4 py-2 text-right text-xs font-black text-slate-700 bg-slate-100/50">${formatM(g.total)}</td>
+                    <td class="px-2 py-1 text-right text-sm font-black text-slate-700 bg-slate-100/50">${formatM(g.total)}</td>
                 </tr>
             `;
 
@@ -2353,15 +2777,15 @@
             g.items.forEach(ins => {
                 html += `
                     <tr class="${idGrupo} hover:bg-blue-50/30 border-b border-slate-100 transition-colors">
-                        <td class="px-4 py-2.5">
-                            <span class="px-2 py-0.5 rounded text-xs font-black uppercase tracking-tighter ${getClaseTipoInsumo(ins.Tipo_Insumo)}">${ins.Tipo_Insumo || 'INSUMO'}</span>
+                        <td class="px-2 py-1">
+                            <span class="px-1 py-0.5 rounded text-sm font-black uppercase tracking-tighter ${getClaseTipoInsumo(ins.Tipo_Insumo)}">${ins.Tipo_Insumo || 'INSUMO'}</span>
                         </td>
-                        <td class="px-4 py-2.5 text-sm font-bold text-slate-700">${ins.Clave_Insumo || '-'}</td>
-                        <td class="px-4 py-2.5 text-sm text-slate-600 leading-tight">${ins.Descripcion || ''}</td>
-                        <td class="px-4 py-2.5 text-sm text-center text-slate-500 font-medium">${ins.Unidad || ''}</td>
-                        <td class="px-4 py-2.5 text-sm text-right font-mono text-slate-600">${parseFloat(ins.Rendimiento_Cantidad || 0).toFixed(6)}</td>
-                        <td class="px-4 py-2.5 text-sm text-right font-mono text-slate-600">${formatM(ins.Costo_Unitario)}</td>
-                        <td class="px-4 py-2.5 text-sm text-right font-mono font-black text-slate-700">${formatM(ins.Importe)}</td>
+                        <td class="px-2 py-1 text-sm font-bold text-slate-700">${ins.Clave_Insumo || '-'}</td>
+                        <td class="px-2 py-1 text-sm text-slate-600 leading-tight">${ins.Descripcion || ''}</td>
+                        <td class="px-2 py-1 text-sm text-center text-slate-500 font-medium">${ins.Unidad || ''}</td>
+                        <td class="px-2 py-1 text-sm text-right font-mono text-slate-600">${parseFloat(ins.Rendimiento_Cantidad || 0).toFixed(6)}</td>
+                        <td class="px-2 py-1 text-sm text-right font-mono text-slate-600">${formatM(ins.Costo_Unitario)}</td>
+                        <td class="px-2 py-1 text-sm text-right font-mono font-black text-slate-700">${formatM(ins.Importe)}</td>
                     </tr>
                 `;
             });
@@ -2401,44 +2825,44 @@
 
         html += `
             <tr class="bg-slate-900 text-white font-black">
-                <td colspan="6" class="px-4 py-4 text-right uppercase tracking-[0.2em] text-xs">Costo Directo Total (CD)</td>
-                <td class="px-4 py-4 text-right font-mono text-sm">${formatM(cd)}</td>
+                <td colspan="6" class="px-2 py-2 text-right uppercase tracking-wider text-sm">Costo Directo Total (CD)</td>
+                <td class="px-2 py-2 text-right font-mono text-sm">${formatM(cd)}</td>
             </tr>
             <tr class="bg-slate-50 text-slate-600 border-t-2 border-slate-200">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Costos Indirectos Totales (${pctIndTotal.toFixed(2)}%)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_ci_total)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-bold uppercase">Costos Indirectos Totales (${pctIndTotal.toFixed(2)}%)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm">${formatM(m_ci_total)}</td>
             </tr>
             <tr class="bg-slate-100 text-slate-700">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (CD + Indirectos)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub1)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-black uppercase">Subtotal (CD + Indirectos)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm font-black">${formatM(sub1)}</td>
             </tr>
             <tr class="bg-white text-slate-600">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Costo Financiero (${(cf_pct * 100).toFixed(4)}%)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_cf)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-bold uppercase">Costo Financiero (${(cf_pct * 100).toFixed(4)}%)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm">${formatM(m_cf)}</td>
             </tr>
             <tr class="bg-slate-100 text-slate-700">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (Financiamiento)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub2)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-black uppercase">Subtotal (Financiamiento)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm font-black">${formatM(sub2)}</td>
             </tr>
             <tr class="bg-white text-slate-600">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase">Utilidad (${(cu_pct * 100).toFixed(2)}%)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_cu)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-bold uppercase">Utilidad (${(cu_pct * 100).toFixed(2)}%)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm">${formatM(m_cu)}</td>
             </tr>
             <tr class="bg-slate-100 text-slate-700">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-black uppercase">Subtotal (Utilidad)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs font-black">${formatM(sub3)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-black uppercase">Subtotal (Utilidad)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm font-black">${formatM(sub3)}</td>
             </tr>
             <tr class="bg-amber-50 text-amber-900">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase italic">Cargos Adicionales (5 al Millar / SFUPU)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_sfp)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-bold uppercase italic">Cargos Adicionales (5 al Millar / SFUPU)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm">${formatM(m_sfp)}</td>
             </tr>
             <tr class="bg-amber-50 text-amber-900 border-b-2 border-white">
-                <td colspan="6" class="px-4 py-2 text-right text-xs font-bold uppercase italic">Impuesto sobre Nómina (${(isn_pct * 100).toFixed(2)}%)</td>
-                <td class="px-4 py-2 text-right font-mono text-xs">${formatM(m_isn)}</td>
+                <td colspan="6" class="px-2 py-1 text-right text-sm font-bold uppercase italic">Impuesto sobre Nómina (${(isn_pct * 100).toFixed(2)}%)</td>
+                <td class="px-2 py-1 text-right font-mono text-sm">${formatM(m_isn)}</td>
             </tr>
             <tr class="bg-blue-600 text-white font-black">
-                <td colspan="6" class="px-4 py-5 text-right uppercase tracking-[0.3em] text-xs">Precio Unitario Final (Total de Matriz)</td>
-                <td class="px-4 py-5 text-right font-mono text-base underline decoration-double">${formatM(pu_final)}</td>
+                <td colspan="6" class="px-2 py-2 text-right uppercase tracking-wider text-sm">Precio Unitario Final (Total de Matriz)</td>
+                <td class="px-2 py-2 text-right font-mono text-sm underline decoration-double">${formatM(pu_final)}</td>
             </tr>
         `;
 
@@ -2494,6 +2918,79 @@
         // cerrarDrillDownMatriz();
     };
 
+    // --- MÓDULO DE AUDITORÍA Y ESTADOS ---
+
+    /**
+     * Cambia el estado de aprobación manualmente desde el switch.
+     */
+    window.cambiarEstadoAprobacionManual = function (checkbox) {
+        const isApproved = checkbox.checked;
+        const statusLabel = document.getElementById('lbl-status-switch');
+        const approvedLabel = document.getElementById('lbl-status-approved');
+
+        if (isApproved) {
+            statusLabel.classList.add('hidden');
+            approvedLabel.classList.remove('hidden');
+        } else {
+            statusLabel.classList.remove('hidden');
+            approvedLabel.classList.add('hidden');
+        }
+
+        // Actualizar visibilidad de la sección de facturas timbradas
+        const seccionFactura = document.getElementById('seccion-carga-factura-timbrada');
+        if (seccionFactura) {
+            if (isApproved) {
+                seccionFactura.classList.remove('hidden');
+            } else {
+                seccionFactura.classList.add('hidden');
+            }
+        }
+
+        // Podríamos persistir este cambio de estado aquí si fuera necesario
+        // google.script.run.actualizarEstadoAprobacion(window.idEstimacionActual, isApproved ? 'APROBADA' : 'EN_REVISION');
+    };
+
+    /**
+     * Renderiza el checklist de auditoría basado en la respuesta de la IA.
+     */
+    window.renderizarChecklistAuditoria = function (checklist) {
+        const container = document.getElementById('checklist-auditoria-container');
+        if (!container || !checklist) return;
+
+        container.innerHTML = checklist.map(item => {
+            const colorClass = item.aprobado ? 'text-emerald-500 bg-emerald-50 border-emerald-100' : 'text-rose-500 bg-rose-50 border-rose-100';
+            const icon = item.aprobado ?
+                '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' :
+                '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>';
+
+            return `
+                <div class="bg-white border rounded-2xl px-4 py-3 flex items-start shadow-sm transition-all group relative ${colorClass} hover:shadow-md">
+                    <div class="mt-0.5">${icon}</div>
+                    <div class="flex-1 min-w-0 ml-2">
+                        <div class="text-[11px] font-black uppercase tracking-tighter leading-tight mb-1">${item.rubro}</div>
+                        <div class="text-[10px] font-medium leading-tight text-slate-500 opacity-80">${item.observacion || 'Cumplimiento verificado.'}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Auto-switch si todo está aprobado (100%)
+        const totalItems = checklist.length;
+        const totalAprobados = checklist.filter(i => i.aprobado).length;
+        const sw = document.getElementById('switch-estado-aprobacion');
+
+        if (sw) {
+            if (totalAprobados === totalItems && totalItems > 0) {
+                sw.checked = true;
+                window.cambiarEstadoAprobacionManual(sw);
+            } else {
+                // Si algo falló o falta, asegurar que no esté aprobado
+                sw.checked = false;
+                window.cambiarEstadoAprobacionManual(sw);
+            }
+        }
+    };
+
     // --- MÓDULO DE ESTIMACIONES ---
 
     /**
@@ -2539,7 +3036,7 @@
                     <div class="p-6 bg-white rounded-full shadow-inner mb-6">
                         <svg class="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
                     </div>
-                    <p class="font-black uppercase tracking-[0.3em] text-[10px] text-slate-300">Expediente Vacío</p>
+                    <p class="font-black uppercase tracking-wider text-sm text-slate-300">Expediente Vacío</p>
                     <p class="text-sm mt-2 font-medium">No se han registrado estimaciones para este contrato aún.</p>
                 </div>
             `;
@@ -2550,45 +3047,45 @@
 
         container.innerHTML = estimaciones.map(est => {
             const isValidated = est.Estado_Validacion === 'VALIDADA';
-            const statusClass = isValidated ? 'bg-inst-oro text-inst-vino' : 'bg-amber-500 text-white';
-            const borderColor = isValidated ? 'border-inst-oro/30' : 'border-amber-100';
+            const statusBg = isValidated ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200';
+            const accentColor = isValidated ? 'bg-emerald-500' : 'bg-inst-oro';
 
             return `
-                <div class="bg-white p-8 rounded-[2.5rem] border ${borderColor} shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all cursor-pointer group relative overflow-hidden"
+                <div class="bg-white rounded-[2rem] border border-slate-200/80 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 cursor-pointer group relative overflow-hidden"
                     onclick="verDetalleEstimacion(${est.ID_Estimacion})">
-                    <!-- Decoración Lateral -->
-                    <div class="absolute top-0 left-0 w-2 h-full ${isValidated ? 'bg-inst-oro' : 'bg-amber-500'}"></div>
+                    <!-- Borde lateral de acento -->
+                    <div class="absolute top-0 left-0 w-1.5 h-full ${accentColor} rounded-l-[2rem]"></div>
                     
-                    <div class="flex justify-between items-start mb-8">
-                        <div>
-                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Folio Oficial</span>
-                            <div class="bg-inst-vino text-white px-4 py-2 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shadow-inst-vino/20">
-                                ${est.No_Estimacion}
+                    <div class="pl-8 pr-6 py-6">
+                        <!-- Fila 1: Folio + Estado -->
+                        <div class="flex justify-between items-center mb-5">
+                            <div class="flex items-center space-x-3">
+                                <div class="bg-inst-vino text-white w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg shadow-lg shadow-inst-vino/20">
+                                    ${est.No_Estimacion}
+                                </div>
+                                <span class="text-sm font-black text-slate-400 uppercase tracking-wider">Est. No.</span>
                             </div>
-                        </div>
-                        <div class="flex flex-col items-end">
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Estado de Pago</span>
-                            <span class="text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${statusClass} shadow-md">
-                                ${est.Estado_Validacion || 'BORRADOR'}
+                            <span class="text-sm font-black px-4 py-2 rounded-xl uppercase tracking-wider ${statusBg} border">
+                                ${est.Estado_Validacion || 'EN REVISIÓN'}
                             </span>
                         </div>
-                    </div>
 
-                    <div class="space-y-4">
-                        <div>
-                            <p class="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Periodo de Ejecución</p>
+                        <!-- Fila 2: Periodo -->
+                        <div class="mb-5">
+                            <p class="text-sm font-black text-slate-300 uppercase tracking-wider mb-1">Periodo de Ejecución</p>
                             <div class="flex items-center text-slate-600">
-                                <svg class="w-3.5 h-3.5 mr-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z"></path></svg>
-                                <p class="text-xs font-bold font-sans">${est.Periodo_Inicio} al ${est.Periodo_Fin}</p>
+                                <svg class="w-4 h-4 mr-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z"></path></svg>
+                                <p class="text-base font-bold text-slate-500">${est.Periodo_Inicio} al ${est.Periodo_Fin}</p>
                             </div>
                         </div>
                         
-                        <div class="pt-6 border-t border-slate-50 flex justify-between items-end">
+                        <!-- Fila 3: Monto + Flecha -->
+                        <div class="pt-4 border-t border-slate-100 flex justify-between items-end">
                             <div>
-                                <p class="text-[9px] font-black text-inst-vino/40 uppercase tracking-widest mb-1">Alcance Líquido</p>
-                                <p class="text-xl font-black text-inst-vino font-sans tracking-tighter">${formatM(est.Monto_Neto_A_Pagar)}</p>
+                                <p class="text-sm font-black text-slate-300 uppercase tracking-wider mb-0.5">Alcance Líquido</p>
+                                <p class="text-xl font-black text-inst-vino tracking-tighter">${formatM(est.Monto_Neto_A_Pagar)}</p>
                             </div>
-                            <div class="h-10 w-10 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 group-hover:bg-inst-vino group-hover:text-white transition-all shadow-inner">
+                            <div class="h-10 w-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300 group-hover:bg-inst-vino group-hover:text-white transition-all">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg>
                             </div>
                         </div>
@@ -2665,6 +3162,8 @@
         const conceptos = data.conceptos || [];
 
         window.idEstimacionActual = est.ID_Estimacion;
+        window.noEstimacionActual = est.No_Estimacion;
+        window.objetoContratoActual = cont.Objeto_Contrato;
         window.montoTotalContratoActual = parseFloat(cont.Monto_Total_Sin_IVA) || 1;
 
         // 1. Mostrar contenedor y ocultar lista
@@ -2689,52 +3188,95 @@
         // 6. Reset estado del botón de guardado
         const btnGuardar = document.getElementById('btn-guardar-detalles-estimacion');
         if (btnGuardar) btnGuardar.disabled = true;
+
+        // 7. Reset Checklist y Switch de Estado
+        if (document.getElementById('checklist-auditoria-container')) {
+            document.getElementById('checklist-auditoria-container').innerHTML = `
+                <div class="bg-white border border-slate-200 rounded-xl px-4 py-2 flex items-center shadow-sm opacity-50 italic text-xs text-slate-400">
+                    Esperando auditoría...
+                </div>
+            `;
+        }
+        const sw = document.getElementById('switch-estado-aprobacion');
+        if (sw) {
+            sw.checked = (est.Estado_Validacion === 'APROBADA');
+            window.cambiarEstadoAprobacionManual(sw);
+        }
+
+        // 8. Cargar validaciones persistidas desde Validacion_Archivos
+        if (est.ID_Estimacion) {
+            google.script.run
+                .withSuccessHandler(function (resVal) {
+                    if (resVal && resVal.success && resVal.data.length > 0) {
+                        // Tomar la validación más reciente
+                        const ultimaVal = resVal.data[resVal.data.length - 1];
+                        if (ultimaVal.Checklist && ultimaVal.Checklist.length > 0) {
+                            window.renderizarChecklistAuditoria(ultimaVal.Checklist);
+                        }
+                    }
+                })
+                .getValidacionesEstimacion(est.ID_Estimacion);
+        }
     }
 
     /**
-     * Renderiza las filas de conceptos para captura de cantidades.
+     * Renderiza las filas de conceptos para captura de cantidades (Nueva Estructura Premium).
      */
     function renderizarTablaConceptosEstimacion(conceptos) {
         const tbody = document.getElementById('tabla-detalle-estimacion-body');
         const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
 
         if (conceptos.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-20 text-center"><div class="flex flex-col items-center justify-center space-y-4 text-slate-300"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><p class="text-xs font-black uppercase tracking-widest">No hay conceptos vinculados</p></div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="px-2 py-20 text-center"><div class="flex flex-col items-center justify-center space-y-4 text-slate-300"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><p class="text-sm font-black uppercase tracking-wider">No hay conceptos vinculados</p></div></td></tr>`;
             return;
         }
 
         tbody.innerHTML = conceptos.map(c => {
-            const cant = parseFloat(c.Cantidad_Estimada_Periodo) || 0;
+            const cantEstActual = parseFloat(c.Cantidad_Estimada_Periodo) || 0;
             const pu = parseFloat(c.Precio_Unitario_Contrato) || 0;
-            const importe = cant * pu;
+            const importeActual = cantEstActual * pu;
+
+            // Simulación de datos anteriores (esto debería venir del backend en el futuro)
+            const cantAnt = parseFloat(c.Avance_Acumulado_Anterior_Cant) || 0;
+            const impAnt = cantAnt * pu;
+
+            const cantAcum = cantAnt + cantEstActual;
+            const impAcum = impAnt + importeActual;
 
             return `
-                <tr class="group hover:bg-inst-crema/10 transition-all border-b border-slate-50" data-id-concepto="${c.ID_Concepto}">
-                    <td class="px-6 py-5">
-                        <div class="text-[10px] font-black text-inst-vino uppercase tracking-tighter">${c.Clave}</div>
+                <tr class="group hover:bg-slate-50 transition-all border-b border-slate-100" data-id-concepto="${c.ID_Concepto}">
+                    <!-- Base Operativa -->
+                    <td class="px-6 py-5 border-r border-slate-100">
+                        <div class="text-sm font-black text-inst-vino uppercase tracking-tight">${c.Clave}</div>
                     </td>
-                    <td class="px-6 py-5">
-                        <div class="text-[13px] text-slate-600 font-medium leading-tight max-w-sm" title="${c.Descripcion}">${c.Descripcion}</div>
+                    <td class="px-6 py-5 border-r border-slate-100">
+                        <div class="text-sm text-slate-500 font-medium leading-tight max-w-sm line-clamp-2" title="${c.Descripcion}">${c.Descripcion}</div>
                     </td>
-                    <td class="px-6 py-5 text-center">
-                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.Unidad}</span>
+                    <td class="px-6 py-5 text-center border-r border-slate-100">
+                        <span class="text-sm font-black text-slate-400 uppercase tracking-wider">${c.Unidad}</span>
                     </td>
-                    <td class="px-6 py-5 text-right font-sans text-xs font-bold text-slate-500">${formatM(pu)}</td>
-                    <td class="px-6 py-2 text-right">
-                        <input type="number" step="any" value="${cant}" data-original="${cant}"
+                    
+                    <!-- Finanzas -->
+                    <td class="px-6 py-5 text-right border-r border-slate-100 font-mono text-sm font-bold text-slate-500 bg-slate-50/30">${formatM(pu)}</td>
+                    
+                    <!-- Acumulado Anterior -->
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-sm font-bold text-slate-400 val-cant-ant">${cantAnt.toFixed(2)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-sm font-bold text-slate-400 val-imp-ant">${formatM(impAnt)}</td>
+                    
+                    <!-- Este Periodo (Editable) -->
+                    <td class="px-6 py-3 text-right border-r border-slate-100 bg-emerald-50/10">
+                        <input type="number" step="any" value="${cantEstActual}" data-original="${cantEstActual}"
                             onchange="recalcularTotalesCaratula()"
                             oninput="verificarCambiosEstimacion()"
                             data-pu="${pu}"
-                            data-total-concepto="${c.Importe_Total_Sin_IVA}"
-                            class="input-cantidad-est w-28 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-right text-sm font-black text-inst-vino focus:ring-4 focus:ring-inst-oro/20 focus:border-inst-oro outline-none transition-all shadow-sm">
+                            data-cant-ant="${cantAnt}"
+                            class="input-cantidad-est w-28 bg-white border border-emerald-200 rounded-xl px-3 py-2 text-right text-sm font-black text-emerald-700 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all shadow-sm">
                     </td>
-                    <td class="px-6 py-5 text-right font-sans text-sm font-black text-inst-vino bg-slate-50/30 val-importe-est">${formatM(importe)}</td>
-                    <td class="px-6 py-5 text-right">
-                        <div class="text-[11px] font-black text-inst-oro italic tracking-tighter val-pct-periodo-est">${((parseFloat(c.Avance_Periodo_Porcentaje) || 0) * 100).toFixed(4)}%</div>
-                    </td>
-                    <td class="px-6 py-5 text-right">
-                         <div class="text-[11px] font-black text-slate-400 tracking-tighter val-pct-acumulado-est">${((parseFloat(c.Avance_Acumulado_Porcentaje) || 0) * 100).toFixed(4)}%</div>
-                    </td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-emerald-50/20 text-sm font-black text-emerald-700 val-importe-est">${formatM(importeActual)}</td>
+                    
+                    <!-- Cierre Actual -->
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-inst-oro/5 font-black text-inst-vino text-sm val-pct-acumulado-est">0.0000%</td>
+                    <td class="px-6 py-5 text-right bg-inst-oro/5 font-black text-inst-vino text-sm val-imp-acumulado-est">${formatM(impAcum)}</td>
                 </tr>
             `;
         }).join('');
@@ -2748,29 +3290,39 @@
         const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
 
         let totalBrutoActual = 0;
+        let totalBrutoAnt = 0;
         const montoTotalC = window.montoTotalContratoActual || 1;
 
         inputs.forEach(input => {
-            const cant = parseFloat(input.value) || 0;
+            const cantActual = parseFloat(input.value) || 0;
+            const cantAnt = parseFloat(input.dataset.cantAnt) || 0;
             const pu = parseFloat(input.dataset.pu) || 0;
-            const importe = cant * pu;
-            totalBrutoActual += importe;
+
+            const importeActual = cantActual * pu;
+            const importeAnt = cantAnt * pu;
+            const importeAcum = importeActual + importeAnt;
+
+            totalBrutoActual += importeActual;
+            totalBrutoAnt += importeAnt;
 
             const tr = input.closest('tr');
-            tr.querySelector('.val-importe-est').innerText = formatM(importe);
+            tr.querySelector('.val-importe-est').innerText = formatM(importeActual);
+            tr.querySelector('.val-imp-acumulado-est').innerText = formatM(importeAcum);
 
-            // Recalcular % del periodo del concepto (Relativo al TOTAL del contrato)
-            const pctP = (importe / montoTotalC) * 100;
-            tr.querySelector('.val-pct-periodo-est').innerText = pctP.toFixed(4) + '%';
+            // Recalcular % acumulado del concepto (Relativo al TOTAL del contrato)
+            const pctAcum = (importeAcum / montoTotalC) * 100;
+            tr.querySelector('.val-pct-acumulado-est').innerText = pctAcum.toFixed(4) + '%';
         });
 
+        const totalBrutoAcum = totalBrutoAnt + totalBrutoActual;
         const iva = totalBrutoActual * 0.16;
         const totalConIva = totalBrutoActual + iva;
         const sfp = totalBrutoActual * 0.005;
         const alcanceLiquido = totalConIva - sfp;
 
         // Porcentajes Globales
-        const pctActual = (totalBrutoActual / montoTotalC) * 100;
+        const pctEstePeriodo = (totalBrutoActual / montoTotalC) * 100;
+        const pctAcumulado = (totalBrutoAcum / montoTotalC) * 100;
 
         // Actualizar UI Carátula
         document.getElementById('lbl-caratula-bruto').innerText = formatM(totalBrutoActual);
@@ -2780,8 +3332,18 @@
         document.getElementById('val-caratula-neto').innerText = formatM(alcanceLiquido);
         document.getElementById('lbl-total-detalle-sin-iva').innerText = formatM(totalBrutoActual);
 
-        document.getElementById('lbl-caratula-pct-avance').innerText = pctActual.toFixed(2) + '%';
-        document.getElementById('bar-caratula-avance').style.width = pctActual.toFixed(2) + '%';
+        // Nuevo: Mostrar Importe con Letra
+        if (document.getElementById('lbl-caratula-monto-letra')) {
+            const montoLetra = convertirNumeroALetras(alcanceLiquido);
+            document.getElementById('lbl-caratula-monto-letra').innerText = `SON: (${montoLetra})`;
+        }
+
+        document.getElementById('lbl-caratula-pct-avance').innerText = pctEstePeriodo.toFixed(2) + '%';
+        document.getElementById('bar-caratula-avance').style.width = pctEstePeriodo.toFixed(2) + '%';
+
+        if (document.getElementById('lbl-caratula-avance-acum')) {
+            document.getElementById('lbl-caratula-avance-acum').innerText = pctAcumulado.toFixed(2) + '%';
+        }
     };
 
     /**
