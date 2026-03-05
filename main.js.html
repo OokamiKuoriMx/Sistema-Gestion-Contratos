@@ -177,6 +177,7 @@
                 if (respuesta.success) {
                     // 3. Inyectar el HTML en #app-shell
                     document.getElementById('app-shell').innerHTML = respuesta.data;
+                    window.view_active = nombreVista;
 
                     // Despachar un evento por si alguna vista requiere inicializar un script externo u otra lógica
                     const event = new CustomEvent('vistaCargada', { detail: { vista: nombreVista, params: params } });
@@ -221,6 +222,8 @@
             inicializarContratoDetalle(e.detail.params);
         } else if (e.detail.vista === 'dashboard.vw') {
             inicializarDashboard();
+        } else if (e.detail.vista === 'importacion_maestra.vw') {
+            inicializarImportacionMaestra();
         }
     });
 
@@ -2268,7 +2271,7 @@
             titulo.innerText = "Procesamiento Maestro por Lotes";
             subtitulo.innerText = "Expediente Técnico Completo";
             helpText.innerText = "Analizando y vinculando documentos en secuencia automática";
-            iconContainer.classList.className = "w-20 h-20 bg-inst-vino text-inst-oro rounded-2xl flex items-center justify-center mb-6 animate-pulse";
+            iconContainer.className = "w-20 h-20 bg-inst-vino text-inst-oro rounded-2xl flex items-center justify-center mb-6 animate-pulse";
         }
     }
 
@@ -2332,20 +2335,27 @@
      * Procesa secuencialmente: 1. Contrato -> 2. CAF -> 3. Programa -> 4. APU
      */
     window.lanzarOrquestadorBatchIA = async function (queue) {
-        const order = [1, 2, 3, 4];
+        // Orden solicitado: 2 (CAF) -> 1 (Contratos) -> 3 (Programa) -> 4 (APU)
+        const order = [2, 1, 3, 4];
         const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos' };
 
-        // Mostrar Modal de IA y ponerlo en modo "Batch"
-        configurarRebrandModalIA('Batch');
-        document.getElementById('modal-importacion-ia').classList.remove('hidden');
-        updateAIStatus(true, "Iniciando Lote...", "Preparando secuencia de 4 documentos");
+        let idConvenioExtraido = null;
+        let catalogoConceptosExtraido = null;
+
+        // Deshabilitar botón y cambiar texto
+        const btn = document.getElementById('btn-iniciar-batch');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<svg class="w-5 h-5 mr-3 animate-spin text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Procesando Expediente...`;
+        }
 
         try {
             for (let step of order) {
                 const file = queue[step];
                 if (!file) continue;
 
-                updateAIStatus(true, `Paso ${step}/4: Procesando ${types[step]}`, `Leyendo y analizando ${file.name}...`);
+                // Marcar slot como procesando
+                marcarSlotProcesando(step);
 
                 // Convertir archivo a base64
                 const base64Data = await new Promise((resolve) => {
@@ -2354,76 +2364,419 @@
                     reader.readAsDataURL(file);
                 });
 
-                // Simular el flujo de handleFilesIA pero de forma controlada y lineal
-                await procesarPasoBatch(base64Data, file.type, types[step]);
+                // Inyectar contexto según el paso
+                let contextParaIA = {};
+                if (step === 1 && idConvenioExtraido) {
+                    contextParaIA.ID_Convenio_Vinculado = idConvenioExtraido;
+                } else if (step === 4 && catalogoConceptosExtraido) {
+                    contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
+                }
+
+                // Procesar silenciosamente y capturar resultados
+                const resultado = await procesarPasoBatchInPlace(base64Data, file.type, types[step], contextParaIA);
+
+                // Guardar datos en memoria para el siguiente paso
+                if (step === 2) {
+                    // ID_Convenio si se creó/encontró
+                    idConvenioExtraido = resultado?.ids?.ID_Convenio || null;
+                } else if (step === 3) {
+                    // El catálogo de conceptos para el matching de APU
+                    catalogoConceptosExtraido = resultado?.datos?.Catalogo_Conceptos || null;
+                }
+
+                // Marcar slot como completado
+                marcarSlotCompletado(step);
             }
 
-            Swal.fire({
-                title: 'Lote Completado',
-                text: 'Se han procesado todos los documentos del expediente.',
-                icon: 'success',
-                confirmButtonColor: '#611232'
-            });
-            cerrarModalImportacionIA();
-            if (typeof inicializarContratos === 'function') inicializarContratos();
+            // Mostrar Modal Final de Resumen
+            setTimeout(() => {
+                const modal = document.getElementById('modal-resumen-batch');
+                if (modal) {
+                    modal.classList.remove('hidden');
+                    setTimeout(() => {
+                        modal.classList.remove('opacity-0');
+                        modal.querySelector('div').classList.remove('scale-95');
+                        modal.querySelector('div').classList.add('scale-100');
+                    }, 50);
+                }
+                if (typeof inicializarContratos === 'function') inicializarContratos();
+            }, 500);
 
         } catch (error) {
             console.error("Error en Batch:", error);
-            updateAIStatus(true, "Error en Lote", error.message || "Ocurrió un error en el procesamiento");
-            setTimeout(() => updateAIStatus(false), 5000);
+            Swal.fire({
+                title: 'Error de Procesamiento',
+                text: error.message || "Ocurrió un error en la secuencia de importación.",
+                icon: 'error',
+                confirmButtonColor: '#611232'
+            });
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-5 h-5 mr-3 text-inst-oro animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Reintentar Procesamiento`;
+            }
         }
     };
 
     /**
-     * Helper para procesar un paso individual del batch de forma asíncrona (Promisified google.script.run)
+     * PROCESA UN PASO DEL BATCH SIN MODALES INTRUSIVOS
      */
-    async function procesarPasoBatch(content, mimeType, targetTable) {
-        const context = {
-            ID_Contrato: window.idContratoActual || null,
-            ID_Concepto: window.idConceptoMatrizActual || null
-        };
-
-        // 1. Llamada a la IA
-        const resIA = await new Promise((resolve, reject) => {
+    async function procesarPasoBatchInPlace(base64, mime, table, context = {}) {
+        return new Promise((resolve, reject) => {
             google.script.run
-                .withSuccessHandler(resolve)
+                .withSuccessHandler((response) => {
+                    if (response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        // Iniciar el guardado automático del resultado extraído
+                        google.script.run
+                            .withSuccessHandler((saveResponse) => {
+                                if (saveResponse.error) reject(new Error(saveResponse.error));
+                                else resolve({ datos: response.datos, ids: saveResponse.ids });
+                            })
+                            .withFailureHandler(reject)
+                            .guardarDatosIA(response.datos, table, context.ID_Convenio_Vinculado || null);
+                    }
+                })
                 .withFailureHandler(reject)
-                .processDocumentWithAI(content, mimeType, targetTable, context);
+                .processDocumentWithAI(base64, mime, table, JSON.stringify(context));
         });
+    }
+    function marcarSlotProcesando(id) {
+        const slot = document.getElementById(`slot-${id}`);
+        if (!slot) return;
+        slot.classList.add('animate-pulse', 'ring-4', 'ring-inst-oro/40');
+        const iconContainer = slot.querySelector('div:first-child');
+        if (iconContainer) {
+            iconContainer.innerHTML = `<svg class="w-6 h-6 animate-spin text-inst-oro" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
+        }
+    }
 
-        if (!resIA || !resIA.success) throw new Error(resIA?.error || "IA falló en " + targetTable);
+    function marcarSlotCompletado(id) {
+        const slot = document.getElementById(`slot-${id}`);
+        if (!slot) return;
+        slot.classList.remove('animate-pulse', 'ring-4', 'ring-inst-oro/40');
+        slot.classList.add('bg-emerald-50', 'border-emerald-200');
+        const iconContainer = slot.querySelector('div:first-child');
+        if (iconContainer) {
+            iconContainer.className = "w-16 h-16 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg transform rotate-12 transition-transform mb-4";
+            iconContainer.innerHTML = `<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>`;
+        }
+        const statusText = slot.querySelector('span:last-child');
+        if (statusText) {
+            statusText.innerText = "Procesado Correctamente";
+            statusText.classList.remove('text-slate-800');
+            statusText.classList.add('text-emerald-700', 'font-bold');
+        }
+    }
 
-        const extracted = resIA.data.datos || resIA.data;
-
-        // 2. Analizar Cambios (Match/Diff)
-        const resDiff = await new Promise((resolve, reject) => {
-            google.script.run
-                .withSuccessHandler(resolve)
-                .withFailureHandler(reject)
-                .analizarCambiosIA(extracted);
-        });
-
-        if (!resDiff || !resDiff.success) throw new Error("Error en comparativa de " + targetTable);
-
-        // 3. Guardado Automático (En Batch no pedimos confirmación de advertencias a menos que sea crítico?)
-        // Por ahora, guardamos directamente para permitir flujo fluido, o podríamos mostrar un 'Review' rápido?
-        // El usuario pidió "Cargar todos para comenzar", implicando un proceso automatizado.
-        const resSave = await new Promise((resolve, reject) => {
-            google.script.run
-                .withSuccessHandler(resolve)
-                .withFailureHandler(reject)
-                .guardarDatosIA(extracted);
-        });
-
-        if (!resSave || !resSave.success) throw new Error("Error guardando datos de " + targetTable);
-
-        // Actualizar estados globales si es Contrato para que los siguientes pasos tengan ID
-        if (targetTable === 'Contratos' && resSave.detalles && resSave.detalles.id_contrato) {
-            window.idContratoActual = resSave.detalles.id_contrato;
+    window.reiniciarEstadoImportacionMaestra = function () {
+        // Ocultar Modal Resumen
+        const modal = document.getElementById('modal-resumen-batch');
+        if (modal) {
+            modal.classList.add('opacity-0');
+            modal.querySelector('div').classList.remove('scale-100');
+            modal.querySelector('div').classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
         }
 
-        return resSave;
+        // Limpiar Queue y reinicializar vista local
+        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+        const emptyState = document.getElementById('drop-zone-empty-state');
+        const filledState = document.getElementById('drop-zone-filled-state');
+        const dropZone = document.getElementById('drop-zone-batch');
+        const btn = document.getElementById('btn-iniciar-batch');
+
+        if (emptyState && filledState && dropZone) {
+            emptyState.classList.remove('hidden', 'opacity-0');
+            filledState.classList.add('hidden', 'opacity-0');
+            dropZone.classList.remove('border-solid');
+            dropZone.classList.add('border-dashed');
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('hidden');
+            btn.className = "hidden px-12 py-5 bg-inst-vino text-white rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-2xl shadow-inst-vino/30 hover:bg-inst-negro hover:-translate-y-1 transition-all items-center group cursor-pointer w-full md:w-auto mt-4";
+            btn.innerHTML = `<svg class="w-5 h-5 mr-3 text-inst-oro animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Iniciar Procesamiento Secuencial`;
+        }
+
+        // Resetear visualmente los slots (recorriendo todos)
+        for (let i = 1; i <= 4; i++) {
+            const slotContainer = document.getElementById(`slot-${i}`);
+            if (slotContainer) {
+                const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
+                slotContainer.className = "bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative";
+                slotContainer.innerHTML = `
+                    <div class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">${i}</div>
+                    <span class="text-[10px] font-black uppercase text-slate-400 mb-1">${labels[i]}</span>
+                    <span class="text-xs font-medium text-slate-300 italic">Esperando archivo...</span>
+                `;
+            }
+        }
+    };
+
+
+
+
+
+
+
+
+
+
+
+    // --- IMPORTACIÓN MAESTRA (BATCH UI CONTROLLER) --- //
+
+    window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+
+    window.inicializarImportacionMaestra = function () {
+        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+        const dropZone = document.getElementById('drop-zone-batch');
+        const fileInput = document.getElementById('file-input-batch');
+
+        if (!dropZone) return;
+
+        const btn = document.getElementById('btn-iniciar-batch');
+        if (btn) {
+            btn.onclick = function () {
+                console.log("BOTÓN BATCH CLICKED - Disparando orquestador...");
+                if (typeof window.iniciarProcesamientoBatch === 'function') {
+                    window.iniciarProcesamientoBatch();
+                } else {
+                    console.error("iniciarProcesamientoBatch no está definido.");
+                }
+            };
+        }
+        verificarIntegridadExpedienteBatch();
+
+        // Limpiar estados iniciales
+        document.getElementById('drop-zone-empty-state').classList.remove('hidden');
+        document.getElementById('drop-zone-filled-state').classList.add('hidden', 'opacity-0');
+        dropZone.classList.remove('border-inst-oro', 'bg-slate-50', 'border-solid');
+        dropZone.classList.add('border-dashed', 'border-slate-200');
+
+        if (!window.batchListenersAttached) {
+            window.addEventListener('dragover', (e) => {
+                if (window.view_active === 'importacion_maestra.vw') e.preventDefault();
+            });
+            window.batchListenersAttached = true;
+        }
+
+        // --- Local Drop Zone Listeners ---
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-inst-oro', 'bg-slate-50');
+            dropZone.classList.remove('border-slate-200');
+        });
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-inst-oro', 'bg-slate-50');
+            dropZone.classList.add('border-slate-200');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-inst-oro', 'bg-slate-50');
+            dropZone.classList.add('border-slate-200');
+            handleBatchFiles(e.dataTransfer.files);
+        });
+    };
+
+    function handleBatchFiles(files) {
+        mostrarContenedorSlots();
+        const arr = Array.from(files);
+        const identificationZone = document.getElementById('batch-identification-zone');
+        if (identificationZone) {
+            identificationZone.classList.remove('hidden');
+            setTimeout(() => identificationZone.classList.remove('opacity-0'), 50);
+        }
+
+        arr.forEach(file => {
+            const fileId = "file-" + Math.random().toString(36).substr(2, 9);
+            renderIdentifyingItemInQueue(fileId, file.name);
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const base64Data = e.target.result;
+                const mimeType = file.type || 'application/pdf';
+
+                google.script.run
+                    .withSuccessHandler(function (res) {
+                        removerItemDeColaIdentificacion(fileId);
+                        if (res.success) {
+                            const clase = res.clase;
+                            let slotMapping = { 'Contratos': 1, 'CAF': 2, 'Programa': 3, 'Matriz_Insumos': 4 };
+                            const finalSlot = slotMapping[clase] || [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || 1;
+
+                            // Si ya hay algo en ese slot, buscar el siguiente disponible
+                            let assignedSlot = finalSlot;
+                            if (window.batchQueueFiles[assignedSlot]) {
+                                assignedSlot = [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || assignedSlot;
+                            }
+
+                            window.batchQueueFiles[assignedSlot] = file;
+                            renderFileInSlotBatch(assignedSlot, file);
+                        } else {
+                            fallbackIdentificationBatch(file, 1);
+                        }
+                        verificarIntegridadExpedienteBatch();
+                    })
+                    .withFailureHandler(function () {
+                        removerItemDeColaIdentificacion(fileId);
+                        fallbackIdentificationBatch(file, 1);
+                        verificarIntegridadExpedienteBatch();
+                    })
+                    .clasificarDocumentoIA(base64Data, mimeType);
+            };
+            reader.readAsDataURL(file);
+        });
     }
+
+    function renderIdentifyingItemInQueue(id, filename) {
+        const list = document.getElementById('batch-identification-list');
+        if (!list) return;
+
+        const row = document.createElement('div');
+        row.id = `queue-item-${id}`;
+        row.className = "flex items-center justify-between bg-white/60 backdrop-blur-sm border border-emerald-100 rounded-2xl p-4 shadow-sm animate-pulse transition-all";
+        row.innerHTML = `
+            <div class="flex items-center space-x-3 overflow-hidden">
+                <div class="w-10 h-10 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </div>
+                <div class="truncate">
+                    <p class="text-[11px] font-black text-slate-700 truncate">${filename}</p>
+                    <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Identificando Tipo de Documento...</p>
+                </div>
+            </div>
+            <div class="flex-shrink-0 animate-bounce">
+                <svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+            </div>
+        `;
+        list.appendChild(row);
+    }
+
+    function removerItemDeColaIdentificacion(id) {
+        const item = document.getElementById(`queue-item-${id}`);
+        if (!item) return;
+        item.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        setTimeout(() => {
+            item.remove();
+            const list = document.getElementById('batch-identification-list');
+            if (list && list.children.length === 0) {
+                const zone = document.getElementById('batch-identification-zone');
+                if (zone) {
+                    zone.classList.add('opacity-0');
+                    setTimeout(() => zone.classList.add('hidden'), 500);
+                }
+            }
+        }, 400);
+    }
+
+    function fallbackIdentificationBatch(file, suggestedSlot) {
+        const name = file.name.toLowerCase();
+        let target = 0;
+        if (name.includes('contrato')) target = 1;
+        else if (name.includes('caf') || name.includes('suficiencia') || name.includes('recurso')) target = 2;
+        else if (name.includes('programa') || name.includes('calendario') || name.includes('trabajo')) target = 3;
+        else if (name.includes('matriz') || name.includes('apu') || name.includes('unitario') || name.includes('insumo')) target = 4;
+        else target = [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || suggestedSlot;
+
+        window.batchQueueFiles[target] = file;
+        renderFileInSlotBatch(target, file);
+    }
+
+    function mostrarContenedorSlots() {
+        const emptyState = document.getElementById('drop-zone-empty-state');
+        const filledState = document.getElementById('drop-zone-filled-state');
+        const dropZone = document.getElementById('drop-zone-batch');
+
+        emptyState.classList.add('hidden', 'opacity-0');
+        filledState.classList.remove('hidden');
+        dropZone.classList.remove('border-dashed');
+        dropZone.classList.add('border-solid');
+
+        // Timeout para que la transición suceda después del display block
+        setTimeout(() => {
+            filledState.classList.remove('opacity-0');
+        }, 50);
+    }
+
+
+    function renderFileInSlotBatch(id, file) {
+        const slot = document.getElementById(`slot-${id}`);
+        if (!slot) return;
+        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
+        const colors = { 1: 'bg-blue-600', 2: 'bg-emerald-600', 3: 'bg-purple-600', 4: 'bg-amber-600' };
+        const lightColors = { 1: 'bg-blue-50 text-blue-600', 2: 'bg-emerald-50 text-emerald-600', 3: 'bg-purple-50 text-purple-600', 4: 'bg-amber-50 text-amber-600' };
+
+        slot.className = `bg-white border-2 border-solid ${lightColors[id].split(' ')[1].replace('text-', 'border-')} rounded-[2rem] p-8 flex flex-col items-center text-center shadow-lg transition-all scale-105 opacity-100 z-10`;
+        slot.innerHTML = `
+            <div class="relative mb-4 group/item">
+                <div class="w-16 h-16 ${colors[id]} text-white rounded-2xl flex items-center justify-center shadow-lg transform group-hover/item:rotate-12 transition-transform">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                </div>
+                <button onclick="removerFilaBatch(${id})" class="absolute -top-3 -right-3 w-7 h-7 bg-rose-500 text-white rounded-full flex items-center justify-center border-4 border-white shadow-xl hover:bg-rose-600 transition-colors">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">${labels[id]}</span>
+            <span class="text-xs font-black text-slate-800 truncate w-full px-2" title="${file.name}">${file.name}</span>
+        `;
+    }
+
+    window.removerFilaBatch = function (id) {
+        window.batchQueueFiles[id] = null;
+        const slot = document.getElementById(`slot-${id}`);
+        if (!slot) return;
+        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
+        slot.className = "bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative";
+        slot.innerHTML = `
+            <div class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">${id}</div>
+            <span class="text-[10px] font-black uppercase text-slate-400 mb-1">${labels[id]}</span>
+            <span class="text-xs font-medium text-slate-300 italic">Esperando archivo...</span>
+        `;
+        verificarIntegridadExpedienteBatch();
+    };
+
+    function verificarIntegridadExpedienteBatch() {
+        const btn = document.getElementById('btn-iniciar-batch');
+        if (!btn) return;
+        const completos = Object.values(window.batchQueueFiles || {}).every(f => f !== null);
+
+        if (completos) {
+            btn.disabled = false;
+            btn.classList.remove('hidden');
+            btn.className = "px-14 py-6 bg-inst-vino text-white rounded-[2.2rem] text-[11px] font-black uppercase tracking-[0.25em] shadow-2xl shadow-inst-vino/40 hover:bg-inst-negro hover:-translate-y-1.5 transition-all flex items-center group cursor-pointer w-full md:w-auto justify-center ring-4 ring-white mt-4";
+            btn.innerHTML = `<svg class="w-6 h-6 mr-4 text-inst-oro group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Iniciar Procesamiento Secuencial`;
+        } else {
+            btn.disabled = true;
+            btn.classList.add('hidden');
+        }
+
+        // Si todo esta vacío, regresar al estado vacío visualmente
+        const todosVacios = Object.values(window.batchQueueFiles || {}).every(f => f === null);
+        if (todosVacios) {
+            document.getElementById('drop-zone-empty-state').classList.remove('hidden', 'opacity-0');
+            document.getElementById('drop-zone-filled-state').classList.add('hidden', 'opacity-0');
+            const dropZone = document.getElementById('drop-zone-batch');
+            dropZone.classList.remove('border-solid');
+            dropZone.classList.add('border-dashed');
+        }
+    }
+
+    window.iniciarProcesamientoBatch = function () {
+        if (typeof window.lanzarOrquestadorBatchIA === 'function') {
+            window.lanzarOrquestadorBatchIA(window.batchQueueFiles);
+        } else {
+            Swal.fire('Error', 'El motor de orquestación no está listo.', 'error');
+        }
+    };
 
     function mostrarAdvertenciaCambiosIA(cambios, datosCompletos, informeAuditoria = null) {
         const listContainer = document.getElementById('lista-cambios-ia');

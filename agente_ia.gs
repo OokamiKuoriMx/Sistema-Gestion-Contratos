@@ -75,54 +75,33 @@ Estructura de la Base de Datos (Esquema Completo):
 1. **Convenios_Recurso**: ID_Convenio, Numero_Acuerdo, Nombre_Fondo, Monto_Apoyo, Fecha_Firma, Vigencia_Fin, Objeto_Programa, Estado, Link_Sharepoint.
 2. **Contratistas**: ID_Contratista, Razon_Social, RFC, Domicilio_Fiscal, Representante_Legal, Telefono, Banco, Cuenta_Bancaria, Cuenta_CLABE.
 3. **Contratos**: ID_Contrato, Numero_Contrato, ID_Convenio_Vinculado, ID_Contratista, Objeto_Contrato, Tipo_Contrato, Area_Responsable, No_Concurso, Modalidad_Adjudicacion, Fecha_Adjudicacion, Monto_Total_Sin_IVA, Monto_Total_Con_IVA, Fecha_Firma, Fecha_Inicio_Obra, Fecha_Fin_Obra, Plazo_Ejecucion_Dias, Porcentaje_Amortizacion_Anticipo, Porcentaje_Penas_Convencionales, No_Fianza_Cumplimiento, Monto_Fianza_Cumplimiento, No_Fianza_Anticipo, Monto_Fianza_Anticipo, No_Fianza_Garantia, Monto_Fianza_Garantia, No_Fianza_Vicios_Ocultos, Monto_Fianza_Vicios_Ocultos, Estado, Retencion_Vigilancia_Pct, Retencion_Garantia_Pct, Otras_Retenciones_Pct, Nombre_Residente_Dependencia, Link_Sharepoint.
-4. **Convenios_Modificatorios**: ID_Convenio_Mod, ID_Contrato, Numero_Convenio_Mod, Tipo_Modificacion, Nuevo_Monto_Con_IVA, Nueva_Fecha_Fin, Motivo, Link_Sharepoint.
-5. **Anticipos**: ID_Anticipo, ID_Contrato, Porcentaje_Otorgado, Monto_Anticipo, Fecha_Pago, Monto_Amortizado_Acumulado, Saldo_Por_Amortizar.
-6. **Catalogo_Conceptos**: ID_Concepto, ID_Contrato, Clave, Descripcion, Unidad, Cantidad_Contratada, Precio_Unitario, Importe_Total_Sin_IVA, Orden.
-7. **Programa**: ID_Numero_Programa, ID_Contrato, Tipo_Programa, Fecha_Inicio, Fecha_Termino.
-8. **Programa_Periodo**: ID_Programa_Periodo, ID_Numero_Programa, Numero_Periodo, Periodo, Fecha_Inicio, Fecha_Termino.
-9. **Programa_Ejecucion**: ID_Programa, ID_Concepto, ID_Programa_Periodo, Fecha_Inicio, Fecha_Fin, Monto_Programado, Avance_Programado_Pct, Link_Sharepoint.
-10. **Estimaciones**: ID_Estimacion, ID_Contrato, No_Estimacion, Tipo_Estimacion, Periodo_Inicio, Periodo_Fin, Monto_Bruto_Estimado, Deduccion_Surv_05_Monto, Subtotal, IVA, Monto_Neto_A_Pagar, Avance_Acumulado_Anterior, Avance_Actual, Estado_Validacion, Link_Sharepoint.
-11. **Detalle_Estimacion**: ID_Detalle, ID_Estimacion, ID_Concepto, Cantidad_Estimada_Periodo, Precio_Unitario_Contrato, Importe_Este_Periodo, Avance_Acumulado_Porcentaje, Importe_Acumulado.
-12. **Deducciones_Retenciones**: ID_Deduccion, ID_Estimacion, Tipo_Deduccion, Monto_Deducido, Concepto_Deduccion.
-13. **Facturas**: ID_Factura, ID_Estimacion, Folio_Fiscal_UUID, No_Factura, Fecha_Emision, Monto_Facturado, Estatus_SAT, Link_Sharepoint.
-14. **Pagos_Emitidos**: ID_Pago, ID_Estimacion, Fecha_Pago, Monto_Pagado, Referencia_Bancaria, Estatus_Pago.
-
-Funciones de Negocio Disponibles:
-- 'getContratosData()', 'upsertConcepto(obj)', 'getProgramaEjecucion(idContrato)', 'actualizarPeriodoPrograma(...)'.
 
 Reglas Críticas:
+- **Vínculo con Convenio**: IMPORTANTE. Si en el contexto se te indica un ID_Convenio_Vinculado, DEBES asignarlo al campo 'ID_Convenio_Vinculado' del contrato.
 - **Datos de Origen Legal**: Captura No. de Concurso, Modalidad de Adjudicación y Área Responsable (Primera página).
 - **Control Financiero**: Extrae Porcentajes de Amortización, Penas Convencionales y Números/Montos de Fianza (Cumplimiento, Anticipo, Garantía, Vicios Ocultos).
 - **Anticipos**: Si el documento NO menciona anticipo o es 0, establece 'Porcentaje_Amortizacion_Anticipo' como 0 o null. No inventes datos.
 - **Plazos**: Identifica el Plazo de Ejecución en Días Naturales.
-- **Vínculos**: Usa IDs temporales (ej. "temp_1") para relacionar registros nuevos.
 - **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
 `;
 
 const PROMPT_IMPORTACION_MATRICES = `
 Rol y Objetivo:
-Eres un Experto en Ingeniería de Costos para el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos de "Análisis de Precios Unitarios (Matrices)" y extraer la estructura técnica y económica completa.
+Eres un Experto en Ingeniería de Costos para el Sistema de Gestión de Contratos(SGC).Tu misión es procesar documentos de "Análisis de Precios Unitarios (Matrices)" y extraer la estructura técnica y económica completa.
 
-Estructura de Extracción (Tablas):
-1. **Contratos**: Extraer porcentajes encontrados: 'Pct_Indirectos_Oficina', 'Pct_Indirectos_Campo', 'Pct_Financiamiento', 'Pct_Utilidad', 'Pct_Cargos_SFP' (5 al millar), 'Pct_ISN'.
-2. **Catalogo_Conceptos**: Para CADA MATRIZ leída, extraer: 'Clave', 'Descripcion', 'Unidad', 'Costo_Directo' (Suma de insumos), 'Precio_Unitario' (Precio final después de sobrecostos). 
-   - **Orden**: Genera un número secuencial (1, 2, 3...) según el orden de aparición en el documento.
-   - **Cantidad_Contratada**: SIEMPRE establece este valor en 1 para todas las importaciones de matrices.
-3. **Matriz_Insumos**: Extraer el desglose de CADA concepto: 
-   - **Tipo_Insumo**: Clasificación numérica OBLIGATORIA:
-     - **1 (MATERIALES)**: Cemento, varilla, cables, pintura, consumibles, etc.
-     - **2 (MANO DE OBRA)**: Gerentes, Especialistas, Técnicos, Cuadrillas, Ayudantes, JORNALES, MO.
-     - **3 (EQUIPO Y HERRAMIENTA)**: Vehículos, Herramienta menor, Maquinaria pesada, Computadoras, Equipos de medición, EQ.
+Estructura de Extracción(Tablas):
+1. ** Matriz_Insumos **: Extraer el desglose de CADA concepto: 
+   - ** Tipo_Insumo **: Clasificación numérica OBLIGATORIA:
+     - ** 1(MATERIALES) **: Cemento, varilla, cables, pintura, consumibles, etc.
+     - ** 2(MANO DE OBRA) **: Gerentes, Especialistas, Técnicos, Cuadrillas, Ayudantes, JORNALES, MO.
+     - ** 3(EQUIPO Y HERRAMIENTA) **: Vehículos, Herramienta menor, Maquinaria pesada, Computadoras, Equipos de medición, EQ.
    - 'Clave_Insumo', 'Descripcion', 'Unidad', 'Costo_Unitario', 'Rendimiento_Cantidad', 'Importe', 'Porcentaje_Incidencia'.
 
-Reglas Críticas de Clasificación y Clasificación:
-- **Identificación por Contexto**: Si los insumos están agrupados bajo un título (ej: "MANO DE OBRA" o "SUBTOTAL DE MATERIALES"), asigna el tipo correspondiente a todos los registros del bloque aunque no se mencione por fila.
-- **Identificación por Palabra Clave**: Analiza la descripción o clave. Ej: "MO..." o "Cabo" o "Cuadrilla" -> Tipo 2. "Maquinaria" o "EQ..." o "Hora-Máquina" -> Tipo 3.
-- **Matching de Catálogo**: Se te proporcionará un "Catálogo Actual" en el prompt adicional. SI la descripción del concepto que estás leyendo coincide contextualmente (aunque varíen espacios o acentos) con uno del catálogo, DEBES usar su 'Clave' original.
-- **Hierarquía**: Cada 'Matriz_Insumo' debe estar vinculada al concepto correspondiente mediante IDs temporales.
-- **Sobrecostos**: Si el documento muestra un porcentaje de utilidad o indirectos, regístralo en la tabla 'Contratos'.
-- **Precisión Numérica**: Captura los rendimientos y costos con todos sus decimales.
-- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+Reglas Críticas:
+- ** Cruce Contextual(CRÍTICO) **: Se te proporcionará un "Catálogo de Conceptos" extraído en pasos anteriores.Las claves en el documento APU pueden variar ligeramente o faltar.DEBES realizar un cruce basado en la similitud de la Clave Y la Descripción para identificar el ID_Concepto correcto del sistema.
+- ** Identificación de Insumos **: Si los insumos están agrupados bajo un título(ej: "MANO DE OBRA"), asigna el tipo correspondiente a todos los registros del bloque.
+- ** Precisión Numérica **: Captura rendimientos y costos con todos sus decimales.
+- ** Formato **: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
 `;
 
 const PROMPT_IMPORTACION_CAF = `
@@ -139,25 +118,24 @@ Estructura de Extracción (Tabla):
    - 'Objeto_Programa': Breve descripción de la finalidad del recurso.
 
 Reglas Críticas:
-- Identifica claramente el ente aportante y el ejecutor.
-- Si el documento es una "Suficiencia Presupuestal", usa el folio de la suficiencia como 'Numero_Acuerdo'.
+- **Upsert Logístico**: El sistema buscará si el convenio ya existe por 'Numero_Acuerdo'. Asegúrate de extraerlo con precisión.
 - **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
 `;
 
 const PROMPT_IMPORTACION_PROGRAMA = `
 Rol y Objetivo:
-Eres un Experto en Programación y Control de Obra para el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos de "Programa de Obra", "Calendario de Ejecución" o "Cronograma" y extraer los montos programados por periodo.
+Eres un Experto en Programación y Control de Obra para el Sistema de Gestión de Contratos(SGC).Tu misión es procesar documentos de "Programa de Obra" y extraer el Catálogo de Conceptos, los Periodos y la Matriz de Programación.
 
-Estructura de Extracción (Tablas):
-1. **Programa**: 'Tipo_Programa' (Ej: "Ejecución", "Suministros"), 'Fecha_Inicio', 'Fecha_Termino'.
-2. **Programa_Periodo**: Identifica los encabezados de columnas (Meses/Semanas/Quincenas). Extrae: 'Numero_Periodo' (1, 2, 3...), 'Periodo' (Nombre del mes o intervalo), 'Fecha_Inicio', 'Fecha_Termino'.
-3. **Programa_Ejecucion**: Vincula conceptos con periodos. Extrae: 'ID_Concepto' (Usa la clave del concepto), 'Monto_Programado', 'Avance_Programado_Pct'.
+Estructura de Extracción(Tablas):
+1. ** Catalogo_Conceptos **: Extrae 'Clave', 'Descripcion', 'Unidad', 'Cantidad_Contratada', 'Precio_Unitario', 'Importe_Total_Sin_IVA'.
+2. ** Programa **: 'Tipo_Programa'(Ej: "Mensual", "Quincenal", "Semanal"), 'Fecha_Inicio', 'Fecha_Termino'.
+3. ** Programa_Periodo **: 'Numero_Periodo', 'Periodo'(Etiqueta / Mes), 'Fecha_Inicio', 'Fecha_Termino'.
+4. ** Programa_Ejecucion **: 'ID_Concepto'(Clave original), 'ID_Programa_Periodo'(Referencia al periodo), 'Monto_Programado', 'Avance_Programado_Pct'.
 
 Reglas Críticas:
-- **Matching de Catálogo**: Se te proporcionará un "Catálogo Actual". DEBES usar los 'ID_Concepto' y 'Clave' existentes para vincular el programa.
-- **Distribución Temporal**: Si el documento muestra una cuadrícula, identifica qué columna corresponde a cada periodo.
-- **Totales**: Valida que la suma de los montos por periodo coincida con el total del concepto si está disponible.
-- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+- ** Limpieza de Descripciones **: Las descripciones suelen tener "saltos de línea fantasmas" que ensucian la base de datos.DEBES limpiar el texto eliminando estos caracteres y colapsando el texto en una sola línea continua y limpia.
+- ** Contexto de Importación **: Este archivo es la fuente primaria del Catálogo de Conceptos para el resto del proceso.No ignores ningún concepto listado.
+- ** Formato **: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
 `;
 
 const PROMPT_VALIDACION_ESTIMACIONES = `
@@ -351,13 +329,22 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
 
         // 3. Extraer respuesta (Es JSON texto, así que hay que parsearlo)
         const llmJsonString = resultJson.candidates[0].content.parts[0].text;
-        const datosExtraidos = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim()); // Mejora de seguridad en el parseo
+        let datosExtraidos = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+
+        // LÓGICA DE ROBUSTEZ: Si la IA no envolvió el objeto en "accion" y "datos", lo hacemos nosotros
+        if (!datosExtraidos.accion && !datosExtraidos.datos) {
+            console.warn("IA no incluyó envoltorio (accion/datos). Auto-envolviendo...");
+            datosExtraidos = {
+                accion: (targetTable === 'Estimaciones' || targetTable === 'Facturas') ? "auditoria_validación" : "importar_datos",
+                datos: datosExtraidos
+            };
+        }
 
         if ((datosExtraidos.accion === "importar_datos" || datosExtraidos.accion === "auditoria_validación") && datosExtraidos.datos) {
             // Devolvemos el objeto completo para que el frontend pueda leer 'informe_auditoria'
             return generarRespuesta(true, datosExtraidos);
         } else {
-            console.error("Estructura IA Inválida:", datosExtraidos);
+            console.error("Estructura IA Inválida tras intento de normalización:", datosExtraidos);
             throw new Error("El formato JSON devuelto por la IA no corresponde al solicitado.");
         }
 
