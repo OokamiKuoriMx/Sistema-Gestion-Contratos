@@ -2335,8 +2335,8 @@
      * Procesa secuencialmente: 1. Contrato -> 2. CAF -> 3. Programa -> 4. APU
      */
     window.lanzarOrquestadorBatchIA = async function (queue) {
-        // Orden solicitado: 2 (CAF) -> 1 (Contratos) -> 3 (Programa) -> 4 (APU)
-        const order = [2, 1, 3, 4];
+        // Orden solicitado estricto: 1 (Contratos) -> 2 (CAF) -> 3 (Programa) -> 4 (APU)
+        const order = [1, 2, 3, 4];
         const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos' };
 
         let idConvenioExtraido = null;
@@ -2367,8 +2367,8 @@
 
                 // Inyectar contexto según el paso
                 let contextParaIA = {};
-                if (step === 1 && idConvenioExtraido) {
-                    contextParaIA.ID_Convenio_Vinculado = idConvenioExtraido;
+                if (step === 2 && idContratoExtraido) {
+                    contextParaIA.ID_Contrato = idContratoExtraido;
                 } else if (step === 3 && idContratoExtraido) {
                     contextParaIA.ID_Contrato = idContratoExtraido;
                 } else if (step === 4) {

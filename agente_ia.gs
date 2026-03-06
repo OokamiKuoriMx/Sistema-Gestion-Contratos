@@ -627,9 +627,25 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     }
                 });
 
-                // --- INYECCIÓN DE CONTEXTO GLOBAL ---
-                if (!registro.ID_Contrato && globalIdContrato) {
-                    registro.ID_Contrato = globalIdContrato;
+                // --- INYECCIÓN FORZOSA BASADA EN RELACIONES_BD ---
+                const relInfo = typeof RELACIONES_BD !== 'undefined' ? RELACIONES_BD[tabla] : null;
+                const idContratoContextoActual = resultados.ids.ID_Contrato || globalIdContrato;
+
+                if (relInfo && !Array.isArray(relInfo)) {
+                    const tablaPadre = relInfo.padre;
+                    const campoFk = relInfo.fk;
+                    const valFkIngresado = registro[campoFk];
+
+                    if (tablaPadre === 'Contratos' && idContratoContextoActual) {
+                        if (valFkIngresado && isNaN(parseInt(valFkIngresado)) || (typeof valFkIngresado === 'string' && valFkIngresado.includes('-'))) {
+                            if (tabla === 'Catalogo_Conceptos' && !registro.Clave) {
+                                registro.Clave = valFkIngresado;
+                            }
+                        }
+                        registro[campoFk] = idContratoContextoActual;
+                    } else if (tablaPadre !== 'Contratos' && ultimosIdsInsertados[tablaPadre]) {
+                        registro[campoFk] = ultimosIdsInsertados[tablaPadre];
+                    }
                 }
 
                 if (tabla === 'Estimaciones' && registro.ID_Contrato) {
@@ -653,23 +669,6 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     if (!registro.Subtotal && bruto > 0) {
                         const ded = parseFloat(registro.Deduccion_Surv_05_Monto) || 0;
                         registro.Subtotal = (bruto - ded).toFixed(2);
-                    }
-                }
-
-                // --- RESOLUCIÓN DE ID_CONTRATO Y LIMPIEZA DE CAMPOS ---
-                const idContratoContextoActual = resultados.ids.ID_Contrato || globalIdContrato;
-
-                if (ESQUEMA_BD[tabla].includes('ID_Contrato')) {
-                    const valActual = registro.ID_Contrato;
-                    // Si el ID_Contrato no es un número o es una cadena que parece una clave (ej: "N3-...")
-                    if (valActual && isNaN(parseInt(valActual)) || (typeof valActual === 'string' && valActual.includes('-'))) {
-                        // Si parece una clave de concepto y la clave está vacía, moverlo
-                        if (tabla === 'Catalogo_Conceptos' && !registro.Clave) {
-                            registro.Clave = valActual;
-                        }
-                        registro.ID_Contrato = idContratoContextoActual;
-                    } else if (!valActual && idContratoContextoActual) {
-                        registro.ID_Contrato = idContratoContextoActual;
                     }
                 }
 
@@ -702,14 +701,6 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     // Limpiar temporales
                     delete registro.Clave_Concepto_Temp;
                     delete registro.Periodo_Temp;
-                }
-
-                // Linking automático para otros hijos
-                if (tabla === 'Programa_Periodo' && !registro.ID_Numero_Programa) {
-                    registro.ID_Numero_Programa = ultimosIdsInsertados['Programa'];
-                }
-                if (tabla === 'Matriz_Insumos' && !registro.ID_Concepto) {
-                    registro.ID_Concepto = ultimosIdsInsertados['Catalogo_Conceptos'];
                 }
 
                 let match = null;
