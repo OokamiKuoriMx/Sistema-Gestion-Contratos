@@ -2340,6 +2340,7 @@
         const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos' };
 
         let idConvenioExtraido = null;
+        let idContratoExtraido = null;
         let catalogoConceptosExtraido = null;
 
         // Deshabilitar botón y cambiar texto
@@ -2368,8 +2369,11 @@
                 let contextParaIA = {};
                 if (step === 1 && idConvenioExtraido) {
                     contextParaIA.ID_Convenio_Vinculado = idConvenioExtraido;
-                } else if (step === 4 && catalogoConceptosExtraido) {
-                    contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
+                } else if (step === 3 && idContratoExtraido) {
+                    contextParaIA.ID_Contrato = idContratoExtraido;
+                } else if (step === 4) {
+                    if (idContratoExtraido) contextParaIA.ID_Contrato = idContratoExtraido;
+                    if (catalogoConceptosExtraido) contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
                 }
 
                 // Procesar silenciosamente y capturar resultados
@@ -2379,6 +2383,9 @@
                 if (step === 2) {
                     // ID_Convenio si se creó/encontró
                     idConvenioExtraido = resultado?.ids?.ID_Convenio || null;
+                } else if (step === 1) {
+                    // ID_Contrato obtenido del paso 1
+                    idContratoExtraido = resultado?.ids?.ID_Contrato || null;
                 } else if (step === 3) {
                     // El catálogo de conceptos para el matching de APU
                     catalogoConceptosExtraido = resultado?.datos?.Catalogo_Conceptos || null;
@@ -2431,10 +2438,10 @@
                         google.script.run
                             .withSuccessHandler((saveResponse) => {
                                 if (saveResponse.error) reject(new Error(saveResponse.error));
-                                else resolve({ datos: response.datos, ids: saveResponse.ids });
+                                else resolve({ datos: response.data.datos, ids: saveResponse.ids });
                             })
                             .withFailureHandler(reject)
-                            .guardarDatosIA(response.datos, table, context.ID_Convenio_Vinculado || null);
+                            .guardarDatosIA(response.data, table, context.ID_Convenio_Vinculado || null);
                     }
                 })
                 .withFailureHandler(reject)
@@ -2516,16 +2523,6 @@
             }
         }
     };
-
-
-
-
-
-
-
-
-
-
 
     // --- IMPORTACIÓN MAESTRA (BATCH UI CONTROLLER) --- //
 
@@ -2627,7 +2624,7 @@
                         fallbackIdentificationBatch(file, 1);
                         verificarIntegridadExpedienteBatch();
                     })
-                    .clasificarDocumentoIA(base64Data, mimeType);
+                    .clasificarDocumentoIA(base64Data, mimeType, file.name);
             };
             reader.readAsDataURL(file);
         });

@@ -251,3 +251,114 @@ function fix_sincronizarTodasLasTablas() {
 
     console.log("PROCESO DE SINCRONIZACIÓN FINALIZADO.");
 }
+
+/**
+ * Utility to clean up records that were not properly linked to a Contract or Program.
+ * Uses RELACIONES_BD to walk through the hierarchy and ensure integrity without deleting valid data.
+ */
+function depurarDatosHuerfanos() {
+    const SS = SpreadsheetApp.getActiveSpreadsheet();
+    let totalBorrados = 0;
+    const reporte = [];
+
+    try {
+        // Cache valid IDs from parent tables to optimize lookups
+        const cacheIds = {};
+        const getValidIds = (tableName) => {
+            if (cacheIds[tableName]) return cacheIds[tableName];
+
+            const sheet = SS.getSheetByName(tableName);
+            if (!sheet) return new Set();
+
+            const data = getSafeData(sheet);
+            if (data.length <= 1) return new Set();
+
+            const pkName = ESQUEMA_BD[tableName][0];
+            const idx = data[0].indexOf(pkName);
+            if (idx === -1) return new Set();
+
+            const ids = new Set();
+            for (let i = 1; i < data.length; i++) {
+                const val = String(data[i][idx]).trim();
+                if (val && val !== "null" && val !== "undefined") {
+                    ids.add(val);
+                }
+            }
+            cacheIds[tableName] = ids;
+            return ids;
+        };
+
+        // Order of cleanup: Level 1 -> Level 2 -> Level 3
+        const niveles = [
+            ['Catalogo_Conceptos', 'Programa', 'Estimaciones', 'Anticipos', 'Convenios_Modificatorios'],
+            ['Matriz_Insumos', 'Programa_Periodo', 'Detalle_Estimacion', 'Deducciones_Retenciones', 'Facturas', 'Pagos_Emitidos', 'Validacion_Archivos'],
+            ['Programa_Ejecucion']
+        ];
+
+        niveles.forEach((nivel, index) => {
+            nivel.forEach(tabla => {
+                const rel = RELACIONES_BD[tabla];
+                if (!rel) return;
+
+                const sheet = SS.getSheetByName(tabla);
+                if (!sheet) return;
+
+                const data = getSafeData(sheet);
+                if (data.length <= 1) return;
+
+                const headers = data[0];
+                const reglas = Array.isArray(rel) ? rel : [rel];
+
+                let count = 0;
+                // Reverse iteration to allow row deletion
+                for (let i = data.length - 1; i >= 1; i--) {
+                    let esHuerfano = false;
+                    let razon = "";
+
+                    for (const regla of reglas) {
+                        const fkIdx = headers.indexOf(regla.fk);
+                        if (fkIdx === -1) continue;
+
+                        const val = String(data[i][fkIdx]).trim();
+                        const validParents = getValidIds(regla.padre);
+
+                        // CRITICAL FIX: Only delete if the FK is present BUT the parent target is missing.
+                        // If FK is empty, we only delete if it's a Level 1 link to Contract (mandatory).
+                        if (!val || val === "null" || val === "undefined" || val === "0") {
+                            if (index === 0) { // Nivel 1 mandatory links
+                                esHuerfano = true;
+                                razon = `FK ${regla.fk} vacía en Nivel 1`;
+                            }
+                        } else if (!validParents.has(val)) {
+                            esHuerfano = true;
+                            razon = `Padre ${val} no encontrado en ${regla.padre}`;
+                        }
+
+                        if (esHuerfano) break;
+                    }
+
+                    if (esHuerfano) {
+                        sheet.deleteRow(i + 1);
+                        count++;
+                    }
+                }
+
+                if (count > 0) {
+                    totalBorrados += count;
+                    reporte.push(`${tabla}: ${count}`);
+                    // IMPORTANT: If we deleted rows in a level that could be a parent, reset cache
+                    delete cacheIds[tabla];
+                }
+            });
+        });
+
+        return generarRespuesta(true, {
+            total: totalBorrados,
+            detalle: reporte.join(", ") || "Base de datos integra"
+        });
+
+    } catch (e) {
+        console.error("Error en depurarDatosHuerfanos:", e);
+        return generarRespuesta(false, e.toString());
+    }
+}

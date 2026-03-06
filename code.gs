@@ -35,6 +35,34 @@ const ESQUEMA_BD = {
     'Validacion_Archivos': ['ID_Validacion', 'ID_Estimacion', 'Tipo_Archivo', 'Fecha_Carga', 'Estado_Validacion', 'Checklist_JSON', 'Observaciones_Resumen']
 };
 
+/**
+ * Esquema de Relaciones Jerárquicas del SGC.
+ * Define la dependencia de cada tabla con su nivel inmediato superior.
+ */
+const RELACIONES_BD = {
+    // Nivel 1: Hijos directos de Contrato
+    'Catalogo_Conceptos': { padre: 'Contratos', fk: 'ID_Contrato' },
+    'Programa': { padre: 'Contratos', fk: 'ID_Contrato' },
+    'Estimaciones': { padre: 'Contratos', fk: 'ID_Contrato' },
+    'Anticipos': { padre: 'Contratos', fk: 'ID_Contrato' },
+    'Convenios_Modificatorios': { padre: 'Contratos', fk: 'ID_Contrato' },
+
+    // Nivel 2: Hijos de Nivel 1
+    'Matriz_Insumos': { padre: 'Catalogo_Conceptos', fk: 'ID_Concepto' },
+    'Programa_Periodo': { padre: 'Programa', fk: 'ID_Numero_Programa' },
+    'Detalle_Estimacion': { padre: 'Estimaciones', fk: 'ID_Estimacion' },
+    'Deducciones_Retenciones': { padre: 'Estimaciones', fk: 'ID_Estimacion' },
+    'Facturas': { padre: 'Estimaciones', fk: 'ID_Estimacion' },
+    'Pagos_Emitidos': { padre: 'Estimaciones', fk: 'ID_Estimacion' },
+    'Validacion_Archivos': { padre: 'Estimaciones', fk: 'ID_Estimacion' },
+
+    // Nivel 3: Hijos de Nivel 2
+    'Programa_Ejecucion': [
+        { padre: 'Programa_Periodo', fk: 'ID_Programa_Periodo' },
+        { padre: 'Catalogo_Conceptos', fk: 'ID_Concepto' }
+    ]
+};
+
 function doGet(e) {
     try {
         return HtmlService.createTemplateFromFile('index')

@@ -125,18 +125,41 @@ function dbInsert(tabla, datos) {
         const headers = data.length > 0 ? data[0] : ESQUEMA_BD[tabla];
         const pkName = headers[0];
 
-        // Generar ID si falta (Consecutivo simple para IDs numéricos o UUID corto)
-        if (!datos[pkName]) {
-            const lastRow = data.length; // Usar data[0] + rows
+        // Determinar si debemos auto-generar el ID:
+        // 1. Si no viene
+        // 2. Si viene un string temporal ("temp_...")
+        // 3. Si viene un string (ej. IA alucinó "N3-...") pero la tabla usa numéricos
+        let necesitaAutoID = !datos[pkName];
+        let ultimoIDNumerico = false;
+        const lastRow = data.length;
+
+        if (lastRow > 1) {
+            const lastId = data[lastRow - 1][0];
+            if (typeof lastId === 'number' || (typeof lastId === 'string' && !isNaN(parseInt(lastId)) && !lastId.includes('-'))) {
+                ultimoIDNumerico = true;
+            }
+        } else {
+            // Asumimos numérico para PKs que empiezan con ID_
+            if (pkName.startsWith('ID_')) ultimoIDNumerico = true;
+        }
+
+        if (datos[pkName] && typeof datos[pkName] === 'string') {
+            if (datos[pkName].toLowerCase().startsWith('temp_') || (ultimoIDNumerico && (isNaN(parseInt(datos[pkName])) || datos[pkName].includes('-')))) {
+                necesitaAutoID = true;
+            }
+        }
+
+        // Generar ID (Consecutivo simple para IDs numéricos o UUID corto)
+        if (necesitaAutoID) {
             if (lastRow > 1) {
-                const lastId = data[data.length - 1][0];
-                if (typeof lastId === 'number') {
-                    datos[pkName] = lastId + 1;
+                const lastId = data[lastRow - 1][0];
+                if (ultimoIDNumerico) {
+                    datos[pkName] = parseInt(lastId || 0) + 1;
                 } else {
                     datos[pkName] = (tabla.substring(0, 3).toUpperCase()) + "-" + Utilities.getUuid().substring(0, 8).toUpperCase();
                 }
             } else {
-                datos[pkName] = 1;
+                datos[pkName] = ultimoIDNumerico ? 1 : Utilities.getUuid().substring(0, 8).toUpperCase();
             }
         }
 

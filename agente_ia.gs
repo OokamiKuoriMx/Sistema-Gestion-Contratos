@@ -10,27 +10,45 @@ if (!GEMINI_API_KEY) {
 
 const PROMPT_CLASIFICADOR_DOCUMENTOS = `
 Rol: Eres un clasificador experto de documentos técnicos de construcción y administración pública.
-Objetivo: Identificar el tipo de documento proporcionado.
+Objetivo: Identificar el tipo de documento proporcionado aplicando la "Regla de Oro".
 
-Tipos Posibles:
-1. 'Contratos': Documentos que mencionan "Contrato de Obra", números de contrato, fianzas, anticipos, y las partes firmantes.
-2. 'CAF': "Convenio de Aportación Financiera", "Autorización de Recursos", "Suficiencia Presupuestal", mención de fondos federales/estatales.
-3. 'Programa': "Programa de Obra", "Calendario de Ejecución", tablas con meses/semanas y montos programados o porcentajes.
-4. 'Matriz_Insumos': "Análisis de Precios Unitarios", "Matrices", listado de materiales, mano de obra y equipo por concepto.
+CONTEXTO ADICIONAL:
+- Filename: {{FILENAME}}
 
-Instrucción: Analiza el contenido y responde ÚNICAMENTE con un JSON con el campo "clase" igual a uno de los strings anteriores o "Desconocido".
+REGLA DE ORO (Criterios de Clasificación):
+
+1. **CAF (Convenio de Apoyo Financiero)**: 
+   - Palabras clave: "BANOBRAS", "FONADIN", "FIDUCIARIO", "Secretaría de Hacienda", "Suficiencia Presupuestal". 
+   - Contenido: Oficio legal corto (1-5 págs) sobre asignación de recursos. No tiene listados de materiales ni calendarios.
+
+2. **APU / MATRIZ (Análisis de Precios Unitarios)**: 
+   - Palabras clave: "Costo Directo", "Indirectos", "Utilidad", "Relación de Insumos". 
+   - **ESTRUCTURA (CRÍTICO)**: Contiene tablas extensas de desgloses de INSUNMOS (MANO DE OBRA, EQUIPO, MATERIALES) con columnas de Unidad (JOR, Hr, kg), Rendimientos y Costos Unitarios.
+   - **NOTA**: Si el documento está lleno de tablas de desgloses técnicos de precios, su clase es 'Matriz_Insumos', incluso si tiene un encabezado de un contrato.
+
+3. **CONTRATO**: 
+   - Palabras clave: "TIPO DE CONTRATO", "SERVICIOS RELACIONADOS CON LA OBRA PÚBLICA", "FECHA DE ADJUDICACIÓN", "RFC", "Fianzas", "Cláusulas".
+   - **ESTRUCTURA (CRÍTICO)**: Es un documento legal articulado en CLÁUSULAS (Primera, Segunda...). No contiene desgloses de materiales por concepto.
+
+4. **PROGRAMA (Programa de Erogaciones / Trabajo)**: 
+   - Palabras clave: "PROGRAMA DE EROGACIONES", "EJECUCIÓN GENERAL", "CALENDARIO". 
+   - ESTRUCTURA: Matriz temporal con columnas para meses/quincenas/semanas y celdas con barras, porcentajes (%) o montos programados.
+
+INSTRUCCIÓN: Analiza el contenido y responde ÚNICAMENTE con un JSON con el campo "clase".
+Clases permitidas: 'Contratos', 'CAF', 'Programa', 'Matriz_Insumos' o 'Desconocido'.
 Ejemplo: {"clase": "Contratos"}
 `;
 
 /**
  * Clasifica un documento usando IA para identificar si es Contrato, CAF, Programa o Matriz.
  */
-function clasificarDocumentoIA(base64Content, mimeType) {
+function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pdf") {
     try {
+        const finalPrompt = PROMPT_CLASIFICADOR_DOCUMENTOS.replace('{{FILENAME}}', filename);
         const payload = {
             contents: [{
                 parts: [
-                    { text: PROMPT_CLASIFICADOR_DOCUMENTOS },
+                    { text: finalPrompt },
                     { inline_data: { mime_type: mimeType, data: base64Content.split(',')[1] || base64Content } }
                 ]
             }],
@@ -43,7 +61,7 @@ function clasificarDocumentoIA(base64Content, mimeType) {
             payload: JSON.stringify(payload)
         };
 
-        const response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY, options);
+        const response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY, options);
         const result = JSON.parse(response.getContentText());
         const jsonResponse = JSON.parse(result.candidates[0].content.parts[0].text);
 
@@ -69,73 +87,124 @@ function normalizeText(text) {
 
 const PROMPT_IMPORTACION_CONTRATOS = `
 Rol y Objetivo:
-Eres un Agente de Inteligencia IA experto en el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos (PDF, Imágenes, Excel) para extraer datos estructurados y vincularlos con la base de datos de Google Sheets.
+Eres un Agente de Inteligencia IA experto en el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos de CONTRATO.
 
-Estructura de la Base de Datos (Esquema Completo):
-1. **Convenios_Recurso**: ID_Convenio, Numero_Acuerdo, Nombre_Fondo, Monto_Apoyo, Fecha_Firma, Vigencia_Fin, Objeto_Programa, Estado, Link_Sharepoint.
-2. **Contratistas**: ID_Contratista, Razon_Social, RFC, Domicilio_Fiscal, Representante_Legal, Telefono, Banco, Cuenta_Bancaria, Cuenta_CLABE.
-3. **Contratos**: ID_Contrato, Numero_Contrato, ID_Convenio_Vinculado, ID_Contratista, Objeto_Contrato, Tipo_Contrato, Area_Responsable, No_Concurso, Modalidad_Adjudicacion, Fecha_Adjudicacion, Monto_Total_Sin_IVA, Monto_Total_Con_IVA, Fecha_Firma, Fecha_Inicio_Obra, Fecha_Fin_Obra, Plazo_Ejecucion_Dias, Porcentaje_Amortizacion_Anticipo, Porcentaje_Penas_Convencionales, No_Fianza_Cumplimiento, Monto_Fianza_Cumplimiento, No_Fianza_Anticipo, Monto_Fianza_Anticipo, No_Fianza_Garantia, Monto_Fianza_Garantia, No_Fianza_Vicios_Ocultos, Monto_Fianza_Vicios_Ocultos, Estado, Retencion_Vigilancia_Pct, Retencion_Garantia_Pct, Otras_Retenciones_Pct, Nombre_Residente_Dependencia, Link_Sharepoint.
+PASO: EXTRACCIÓN Y SALIDA JSON
+Devuelve ÚNICAMENTE un objeto JSON válido (sin formato Markdown, sin texto adicional).
 
-Reglas Críticas:
-- **Vínculo con Convenio**: IMPORTANTE. Si en el contexto se te indica un ID_Convenio_Vinculado, DEBES asignarlo al campo 'ID_Convenio_Vinculado' del contrato.
-- **Datos de Origen Legal**: Captura No. de Concurso, Modalidad de Adjudicación y Área Responsable (Primera página).
-- **Control Financiero**: Extrae Porcentajes de Amortización, Penas Convencionales y Números/Montos de Fianza (Cumplimiento, Anticipo, Garantía, Vicios Ocultos).
-- **Anticipos**: Si el documento NO menciona anticipo o es 0, establece 'Porcentaje_Amortizacion_Anticipo' como 0 o null. No inventes datos.
-- **Plazos**: Identifica el Plazo de Ejecución en Días Naturales.
-- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+Estructura requerida:
+{
+  "tipo_documento": "CONTRATO",
+  "nivel_confianza": "Alto",
+  "datos_extraidos": {
+    "Numero_Contrato": "Clave del contrato (ej. 25-E-CF-...)",
+    "Objeto_Contrato": "Descripción del servicio u obra",
+    "Fecha_Firma": "Fecha de formalización (YYYY-MM-DD)",
+    "Fecha_Inicio_Obra": "Fecha de inicio pactada (YYYY-MM-DD)",
+    "Fecha_Fin_Obra": "Fecha de término pactada (YYYY-MM-DD)",
+    "Montos": {
+      "Monto_Total_Sin_IVA": 1499787.55,
+      "Monto_Total_Con_IVA": 1739753.56
+    },
+    "Contratista": {
+      "Razon_Social": "Nombre de la empresa",
+      "RFC": "RFC con homoclave",
+      "Representante_Legal": "Nombre del representante"
+    },
+    "ID_Convenio_Vinculado": "ASIGNAR EL VALOR PROPORCIONADO EN EL CONTEXTO SI EXISTE"
+  }
+}
 `;
 
 const PROMPT_IMPORTACION_MATRICES = `
 Rol y Objetivo:
-Eres un Experto en Ingeniería de Costos para el Sistema de Gestión de Contratos(SGC).Tu misión es procesar documentos de "Análisis de Precios Unitarios (Matrices)" y extraer la estructura técnica y económica completa.
+Eres un Experto en Ingeniería de Costos. Tu misión es procesar documentos de APU (Analísis de Precios Unitarios).
 
-Estructura de Extracción(Tablas):
-1. ** Matriz_Insumos **: Extraer el desglose de CADA concepto: 
-   - ** Tipo_Insumo **: Clasificación numérica OBLIGATORIA:
-     - ** 1(MATERIALES) **: Cemento, varilla, cables, pintura, consumibles, etc.
-     - ** 2(MANO DE OBRA) **: Gerentes, Especialistas, Técnicos, Cuadrillas, Ayudantes, JORNALES, MO.
-     - ** 3(EQUIPO Y HERRAMIENTA) **: Vehículos, Herramienta menor, Maquinaria pesada, Computadoras, Equipos de medición, EQ.
-   - 'Clave_Insumo', 'Descripcion', 'Unidad', 'Costo_Unitario', 'Rendimiento_Cantidad', 'Importe', 'Porcentaje_Incidencia'.
+PASO: EXTRACCIÓN Y SALIDA JSON
+Devuelve ÚNICAMENTE un objeto JSON válido.
 
-Reglas Críticas:
-- ** Cruce Contextual(CRÍTICO) **: Se te proporcionará un "Catálogo de Conceptos" extraído en pasos anteriores.Las claves en el documento APU pueden variar ligeramente o faltar.DEBES realizar un cruce basado en la similitud de la Clave Y la Descripción para identificar el ID_Concepto correcto del sistema.
-- ** Identificación de Insumos **: Si los insumos están agrupados bajo un título(ej: "MANO DE OBRA"), asigna el tipo correspondiente a todos los registros del bloque.
-- ** Precisión Numérica **: Captura rendimientos y costos con todos sus decimales.
-- ** Formato **: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+Estructura requerida:
+{
+  "tipo_documento": "APU",
+  "nivel_confianza": "Alto",
+  "datos_extraidos": {
+    "concepto_padre": {
+      "Clave_Concepto": "Clave principal del análisis (ej. N3-25-1)",
+      "Descripcion_Concepto": "Descripción de la actividad principal",
+      "Unidad": "Unidad del concepto (ej. ESTUDIO, MES)",
+      "Precio_Unitario_Total": 255011.33
+    },
+    "insumos": [
+      {
+        "Tipo_Insumo": "1(MATERIALES) | 2(MANO DE OBRA) | 3(EQUIPO)",
+        "Clave_Insumo": "Clave del insumo (ej. GERPROY, EQ01)",
+        "Descripcion": "Descripción del insumo",
+        "Unidad": "JOR, Hr, Pza, etc.",
+        "Costo_Unitario": 7032.75,
+        "Rendimiento_Cantidad": 5.0,
+        "Importe": 35163.75
+      }
+    ]
+  }
+}
 `;
 
 const PROMPT_IMPORTACION_CAF = `
 Rol y Objetivo:
-Eres un Experto en Gestión de Recursos Federales y Estatales para el Sistema de Gestión de Contratos (SGC). Tu misión es extraer datos de "Convenios de Aportación Financiera (CAF)", "Convenios de Recurso" o "Suficiencias Presupuestales".
+Eres un Experto en Gestión de Recursos. Tu misión es extraer datos de CAF (Convenio de Apoyo Financiero).
 
-Estructura de Extracción (Tabla):
-1. **Convenios_Recurso**: 
-   - 'Numero_Acuerdo': Clave o número de convenio oficial.
-   - 'Nombre_Fondo': Nombre del fondo, fideicomiso o programa (ej: "FISM", "FORTAMUN", "Fideicomiso 1936").
-   - 'Monto_Apoyo': Importe total autorizado.
-   - 'Fecha_Firma': Fecha en que se suscribe el documento.
-   - 'Vigencia_Fin': Fecha límite de ejercicio del recurso.
-   - 'Objeto_Programa': Breve descripción de la finalidad del recurso.
+PASO: EXTRACCIÓN Y SALIDA JSON
+Devuelve ÚNICAMENTE un objeto JSON válido.
 
-Reglas Críticas:
-- **Upsert Logístico**: El sistema buscará si el convenio ya existe por 'Numero_Acuerdo'. Asegúrate de extraerlo con precisión.
-- **Formato**: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+Estructura requerida:
+{
+  "tipo_documento": "CAF",
+  "nivel_confianza": "Alto",
+  "datos_extraidos": {
+    "Numero_Acuerdo": "Extraer el folio o número del convenio",
+    "Nombre_Fondo": "Nombre del fideicomiso o fondo (ej. FONADIN)",
+    "Monto_Apoyo": 0.0,
+    "Fecha_Firma": "YYYY-MM-DD",
+    "Entidades_Involucradas": ["BANOBRAS", "SHCP", "..."]
+  }
+}
 `;
 
 const PROMPT_IMPORTACION_PROGRAMA = `
 Rol y Objetivo:
-Eres un Experto en Programación y Control de Obra para el Sistema de Gestión de Contratos(SGC).Tu misión es procesar documentos de "Programa de Obra" y extraer el Catálogo de Conceptos, los Periodos y la Matriz de Programación.
+Eres un Experto en Programación de Obra. Tu misión es extraer datos del PROGRAMA de Erogaciones.
 
-Estructura de Extracción(Tablas):
-1. ** Catalogo_Conceptos **: Extrae 'Clave', 'Descripcion', 'Unidad', 'Cantidad_Contratada', 'Precio_Unitario', 'Importe_Total_Sin_IVA'.
-2. ** Programa **: 'Tipo_Programa'(Ej: "Mensual", "Quincenal", "Semanal"), 'Fecha_Inicio', 'Fecha_Termino'.
-3. ** Programa_Periodo **: 'Numero_Periodo', 'Periodo'(Etiqueta / Mes), 'Fecha_Inicio', 'Fecha_Termino'.
-4. ** Programa_Ejecucion **: 'ID_Concepto'(Clave original), 'ID_Programa_Periodo'(Referencia al periodo), 'Monto_Programado', 'Avance_Programado_Pct'.
+PASO: EXTRACCIÓN Y SALIDA JSON
+Devuelve ÚNICAMENTE un objeto JSON válido.
 
-Reglas Críticas:
-- ** Limpieza de Descripciones **: Las descripciones suelen tener "saltos de línea fantasmas" que ensucian la base de datos.DEBES limpiar el texto eliminando estos caracteres y colapsando el texto en una sola línea continua y limpia.
-- ** Contexto de Importación **: Este archivo es la fuente primaria del Catálogo de Conceptos para el resto del proceso.No ignores ningún concepto listado.
-- ** Formato **: Salida estrictamente en JSON con "accion": "importar_datos" y "datos".
+Estructura requerida:
+{
+  "tipo_documento": "PROGRAMA",
+  "nivel_confianza": "Alto",
+  "datos_extraidos": {
+    "Fechas_Generales": {
+      "Fecha_Inicio": "YYYY-MM-DD",
+      "Fecha_Fin": "YYYY-MM-DD",
+      "Plazo_Dias": 90
+    },
+    "Periodos_Identificados": ["DICIEMBRE 2025", "ENERO 2026", "FEBRERO 2026"],
+    "conceptos_programados": [
+      {
+        "Clave_Concepto": "Clave que se está programando (ej. N3-25-5)",
+        "Descripcion_Limpiada": "Descripción sin saltos de línea",
+        "Unidad": "Unidad original",
+        "Importe_Total": 138975.44,
+        "avances_por_periodo": [
+          {
+            "Nombre_Periodo": "DICIEMBRE 2025",
+            "Porcentaje_Avance": 10.06,
+            "Monto_Periodo": 13980.92
+          }
+        ]
+      }
+    ]
+  }
+}
 `;
 
 const PROMPT_VALIDACION_ESTIMACIONES = `
@@ -188,6 +257,14 @@ Formato de Salida Estricto (JSON):
  */
 function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentContext = null) {
     try {
+        if (parentContext && typeof parentContext === 'string') {
+            try {
+                parentContext = JSON.parse(parentContext);
+            } catch (e) {
+                console.error("Error parseando parentContext:", e);
+            }
+        }
+
         if (!base64Data || !mimeType) {
             throw new Error("Datos del archivo o MimeType faltantes.");
         }
@@ -329,24 +406,28 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
 
         // 3. Extraer respuesta (Es JSON texto, así que hay que parsearlo)
         const llmJsonString = resultJson.candidates[0].content.parts[0].text;
-        let datosExtraidos = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+        let extraction = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim());
 
-        // LÓGICA DE ROBUSTEZ: Si la IA no envolvió el objeto en "accion" y "datos", lo hacemos nosotros
-        if (!datosExtraidos.accion && !datosExtraidos.datos) {
-            console.warn("IA no incluyó envoltorio (accion/datos). Auto-envolviendo...");
-            datosExtraidos = {
-                accion: (targetTable === 'Estimaciones' || targetTable === 'Facturas') ? "auditoria_validación" : "importar_datos",
-                datos: datosExtraidos
-            };
+        // LÓGICA REGLA DE ORO: Extraer datos_extraidos si existe el wrapper
+        let datosFinales = extraction.datos_extraidos || extraction.datos || extraction;
+
+        // Formatear para el orquestador frontend
+        const respuestaFormateada = {
+            accion: (targetTable === 'Estimaciones' || targetTable === 'Facturas') ? "auditoria_validación" : "importar_datos",
+            datos: datosFinales,
+            tipo_documento: extraction.tipo_documento || "DESCONOCIDO", // De la Regla de Oro
+            nivel_confianza: extraction.nivel_confianza || "Bajo",
+            parentContext: parentContext // Preservar para el guardado
+        };
+
+        // Si es auditoría, preservar el checklist
+        if (extraction.checklist_auditoria) {
+            respuestaFormateada.checklist_auditoria = extraction.checklist_auditoria;
+            respuestaFormateada.informe_auditoria = extraction.informe_auditoria;
+            respuestaFormateada.estado_global = extraction.estado_global;
         }
 
-        if ((datosExtraidos.accion === "importar_datos" || datosExtraidos.accion === "auditoria_validación") && datosExtraidos.datos) {
-            // Devolvemos el objeto completo para que el frontend pueda leer 'informe_auditoria'
-            return generarRespuesta(true, datosExtraidos);
-        } else {
-            console.error("Estructura IA Inválida tras intento de normalización:", datosExtraidos);
-            throw new Error("El formato JSON devuelto por la IA no corresponde al solicitado.");
-        }
+        return generarRespuesta(true, respuestaFormateada);
 
     } catch (e) {
         console.error(e);
@@ -357,9 +438,17 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentC
 /**
  * Función auxiliar para insertar y actualizar los datos en las pestañas como hace el webhook.
  * Realiza un chequeo de existencia (UPSERT) para evitar records duplicados desde la IA.
+ * @param {Object} respuestaIA - El objeto devuelto por processDocumentWithAI.
+ * @param {string} tablaDestino - La tabla objetivo (opcional).
+ * @param {string} idConvenioVinculado - ID de convenio para vincular (opcional).
  */
-function guardarDatosIA(datos) {
-    let resultados = { insertados: 0, actualizados: 0 };
+function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = null) {
+    if (!respuestaIA) return generarRespuesta(false, "No se recibieron datos para guardar.");
+
+    // El objeto puede venir directo o envuelto por processDocumentWithAI
+    const datos = respuestaIA.datos || respuestaIA;
+    const tipo = respuestaIA.tipo_documento || "DESCONOCIDO";
+    let resultados = { insertados: 0, actualizados: 0, ids: {} };
 
     // Jerarquía de inserción (Padres primero, Hijos después) para resolver llaves foráneas
     const jerarquia = [
@@ -380,8 +469,124 @@ function guardarDatosIA(datos) {
         'Matriz_Insumos'
     ];
 
+    // --- NORMALIZACIÓN REGLA DE ORO ---
+    // Si los datos vienen en el formato anidado de la Regla de Oro, los "aplanamos" o movemos a las llaves que espera guardarDatosIA
+    if (tipo === 'CONTRATO') {
+        const c = datos; // datos ya es datos_extraidos
+        const contratista = {
+            Razon_Social: c.Contratista?.Razon_Social,
+            RFC: c.Contratista?.RFC,
+            Representante_Legal: c.Contratista?.Representante_Legal
+        };
+        const contrato = {
+            Numero_Contrato: c.Numero_Contrato,
+            Objeto_Contrato: c.Objeto_Contrato,
+            Fecha_Firma: c.Fecha_Firma,
+            Fecha_Inicio_Obra: c.Fecha_Inicio_Obra,
+            Fecha_Fin_Obra: c.Fecha_Fin_Obra,
+            Monto_Total_Sin_IVA: c.Montos?.Monto_Total_Sin_IVA,
+            Monto_Total_Con_IVA: c.Montos?.Monto_Total_Con_IVA,
+            ID_Convenio_Vinculado: idConvenioVinculado || c.ID_Convenio_Vinculado
+        };
+        datos.Contratistas = [contratista];
+        datos.Contratos = [contrato];
+    } else if (tipo === 'CAF') {
+        datos.Convenios_Recurso = [datos];
+    } else if (tipo === 'PROGRAMA') {
+        // Mapear Programa
+        datos.Programa = [{
+            Programa: datos.Nombre_Programa || datos.Programa || "Programa General de Obra",
+            Tipo_Programa: datos.Tipo_Programa || "MENSUAL",
+            Fecha_Inicio: datos.Fechas_Generales?.Fecha_Inicio || null,
+            Fecha_Termino: datos.Fechas_Generales?.Fecha_Fin || null,
+            Plazo_Ejecucion_Dias: datos.Fechas_Generales?.Plazo_Dias || null
+        }];
+        // Períodos
+        if (datos.Periodos_Identificados) {
+            datos.Programa_Periodo = datos.Periodos_Identificados.map((p, i) => ({
+                Numero_Periodo: i + 1,
+                Periodo: p
+            }));
+        }
+        // Conceptos y Ejecución
+        if (datos.conceptos_programados) {
+            datos.Catalogo_Conceptos = datos.conceptos_programados.map(cp => ({
+                Clave: cp.Clave_Concepto,
+                Descripcion: cp.Descripcion_Limpiada,
+                Unidad: cp.Unidad,
+                Importe_Total_Sin_IVA: cp.Importe_Total
+            }));
+            // La ejecución requiere IDs de período, se manejará en el loop de jerarquía
+            datos.Programa_Ejecucion = [];
+            datos.conceptos_programados.forEach(cp => {
+                cp.avances_por_periodo?.forEach(av => {
+                    datos.Programa_Ejecucion.push({
+                        Clave_Concepto_Temp: cp.Clave_Concepto,
+                        Periodo_Temp: av.Nombre_Periodo,
+                        Monto_Programado: av.Monto_Periodo,
+                        Avance_Programado_Pct: av.Porcentaje_Avance
+                    });
+                });
+            });
+        }
+    } else if (tipo === 'APU') {
+        // El concepto padre podría ser nuevo o match
+        if (datos.concepto_padre) {
+            datos.Catalogo_Conceptos = [{
+                Clave: datos.concepto_padre.Clave_Concepto,
+                Descripcion: datos.concepto_padre.Descripcion_Concepto,
+                Unidad: datos.concepto_padre.Unidad,
+                Precio_Unitario: datos.concepto_padre.Precio_Unitario_Total
+            }];
+        }
+        if (datos.insumos) {
+            datos.Matriz_Insumos = datos.insumos.map(ins => ({
+                Tipo_Insumo: ins.Tipo_Insumo,
+                Clave_Insumo: ins.Clave_Insumo,
+                Descripcion: ins.Descripcion,
+                Unidad: ins.Unidad,
+                Costo_Unitario: ins.Costo_Unitario,
+                Rendimiento_Cantidad: ins.Rendimiento_Cantidad,
+                Importe: ins.Importe
+            }));
+        }
+    }
+
+    // --- RESOLUCIÓN GLOBAL DE CONTRATO DESDE LA RAÍZ ---
+    let pContext = respuestaIA.parentContext;
+    if (typeof pContext === 'string') {
+        try { pContext = JSON.parse(pContext); } catch (e) { pContext = null; }
+    }
+
+    let globalIdContrato = respuestaIA.ID_Contrato_Contexto || (pContext ? pContext.ID_Contrato : null);
+
+    // Si aún no hay ID global pero la IA extrajo un Numero_Contrato o ID_Contrato, buscarlo o crearlo
+    const needleText = datos.Numero_Contrato || datos.ID_Contrato || (datos.Contrato && typeof datos.Contrato === 'string' ? datos.Contrato : null);
+    if (!globalIdContrato && needleText) {
+        if (!isNaN(parseInt(needleText)) && String(needleText).length < 6) {
+            // Es un ID numérico directo
+            globalIdContrato = parseInt(needleText);
+        } else {
+            // Es una clave de contrato (texto), buscarlo en la DB
+            const contDb = dbSelect('Contratos', { Numero_Contrato: needleText });
+            if (contDb && contDb.length > 0) {
+                globalIdContrato = contDb[0].ID_Contrato;
+            } else {
+                // Auto-create minimal contract to hold the relationship
+                const newCont = dbInsert('Contratos', { Numero_Contrato: needleText, Objeto_Contrato: "Importado automáticamente por IA" });
+                if (newCont && newCont.ID_Contrato) {
+                    globalIdContrato = newCont.ID_Contrato;
+                }
+            }
+        }
+    }
+
     // Mapa de traducción de IDs: Si la IA generó un "ID_Contrato": "temp_1", y dbInsert le asignó el entero 15, guardamos { "temp_1": 15 }
     const mapaIds = {};
+    const ultimosIdsInsertados = {}; // Para linking automático de hijos sin ID temporal
+    if (globalIdContrato) {
+        ultimosIdsInsertados['Contratos'] = globalIdContrato;
+    }
 
     jerarquia.forEach(tabla => {
         if (datos[tabla] && Array.isArray(datos[tabla])) {
@@ -390,7 +595,8 @@ function guardarDatosIA(datos) {
 
             // --- LÓGICA DE PURGA PARA MATRICES (SUSTITUCIÓN) ---
             if (tabla === 'Matriz_Insumos' && typeof dbDelete === 'function') {
-                const conIds = [...new Set(datos[tabla].map(ins => ins.ID_Concepto).filter(id => id && !String(id).startsWith('temp_')))];
+                const listadoInsumos = datos[tabla];
+                const conIds = [...new Set(listadoInsumos.map(ins => ins.ID_Concepto).filter(id => id && !String(id).startsWith('temp_')))];
                 conIds.forEach(idC => {
                     dbDelete('Matriz_Insumos', { ID_Concepto: idC });
                 });
@@ -421,9 +627,9 @@ function guardarDatosIA(datos) {
                     }
                 });
 
-                // --- INYECCIÓN DE CONTEXTO (SI FALTA ID_CONTRATO) ---
-                if (!registro.ID_Contrato && datos.ID_Contrato_Contexto) {
-                    registro.ID_Contrato = datos.ID_Contrato_Contexto;
+                // --- INYECCIÓN DE CONTEXTO GLOBAL ---
+                if (!registro.ID_Contrato && globalIdContrato) {
+                    registro.ID_Contrato = globalIdContrato;
                 }
 
                 if (tabla === 'Estimaciones' && registro.ID_Contrato) {
@@ -439,8 +645,6 @@ function guardarDatosIA(datos) {
                             if (!registro.Deduccion_Surv_05_Monto || registro.Deduccion_Surv_05_Monto == 0) {
                                 registro.Deduccion_Surv_05_Monto = (bruto * (pctVig / 100)).toFixed(2);
                             }
-
-                            // You could add other retentions here as separate fields or deducciones records
                         }
                     }
 
@@ -452,11 +656,67 @@ function guardarDatosIA(datos) {
                     }
                 }
 
+                // --- RESOLUCIÓN DE ID_CONTRATO Y LIMPIEZA DE CAMPOS ---
+                const idContratoContextoActual = resultados.ids.ID_Contrato || globalIdContrato;
+
+                if (ESQUEMA_BD[tabla].includes('ID_Contrato')) {
+                    const valActual = registro.ID_Contrato;
+                    // Si el ID_Contrato no es un número o es una cadena que parece una clave (ej: "N3-...")
+                    if (valActual && isNaN(parseInt(valActual)) || (typeof valActual === 'string' && valActual.includes('-'))) {
+                        // Si parece una clave de concepto y la clave está vacía, moverlo
+                        if (tabla === 'Catalogo_Conceptos' && !registro.Clave) {
+                            registro.Clave = valActual;
+                        }
+                        registro.ID_Contrato = idContratoContextoActual;
+                    } else if (!valActual && idContratoContextoActual) {
+                        registro.ID_Contrato = idContratoContextoActual;
+                    }
+                }
+
+                // --- RESOLUCIÓN DE TEMPORALES Y LINKS JERÁRQUICOS ---
+                if (tabla === 'Programa_Ejecucion') {
+                    // 1. Resolver ID_Numero_Programa
+                    if (!registro.ID_Numero_Programa) {
+                        registro.ID_Numero_Programa = ultimosIdsInsertados['Programa'];
+                    }
+
+                    // 2. Resolver ID_Concepto (por Clave_Temp o por búsqueda inteligente)
+                    if (!registro.ID_Concepto && (registro.Clave_Concepto_Temp || registro.Clave)) {
+                        const clave = registro.Clave_Concepto_Temp || registro.Clave;
+                        if (idContratoContextoActual) {
+                            const con = dbSelect('Catalogo_Conceptos', { Clave: clave, ID_Contrato: idContratoContextoActual });
+                            if (con && con.length > 0) registro.ID_Concepto = con[0].ID_Concepto;
+                        }
+                    }
+
+                    // 3. Resolver ID_Programa_Periodo (por Periodo_Temp o búsqueda)
+                    if (!registro.ID_Programa_Periodo && (registro.Periodo_Temp || registro.Periodo)) {
+                        const perLabel = registro.Periodo_Temp || registro.Periodo;
+                        const idProg = registro.ID_Numero_Programa || ultimosIdsInsertados['Programa'];
+                        if (idProg) {
+                            const per = dbSelect('Programa_Periodo', { Periodo: perLabel, ID_Numero_Programa: idProg });
+                            if (per && per.length > 0) registro.ID_Programa_Periodo = per[0].ID_Programa_Periodo;
+                        }
+                    }
+
+                    // Limpiar temporales
+                    delete registro.Clave_Concepto_Temp;
+                    delete registro.Periodo_Temp;
+                }
+
+                // Linking automático para otros hijos
+                if (tabla === 'Programa_Periodo' && !registro.ID_Numero_Programa) {
+                    registro.ID_Numero_Programa = ultimosIdsInsertados['Programa'];
+                }
+                if (tabla === 'Matriz_Insumos' && !registro.ID_Concepto) {
+                    registro.ID_Concepto = ultimosIdsInsertados['Catalogo_Conceptos'];
+                }
+
                 let match = null;
                 const idOriginalDadoPorIA = registro[pkName];
 
                 if (registro[pkName] && typeof registro[pkName] !== 'string' && typeof registro[pkName] !== 'number') {
-                    delete registro[pkName]; // Limpiar basuras
+                    delete registro[pkName];
                 }
 
                 if (registro[pkName]) {
@@ -465,134 +725,101 @@ function guardarDatosIA(datos) {
                     if (res && res.length > 0) match = res[0];
                 }
 
-                // --- SMART MATCHING PARA CONCEPTOS (POR DESCRIPCIÓN) ---
-                if (tabla === 'Catalogo_Conceptos' && !match && registro.ID_Contrato) {
-                    const catalogoExistente = dbSelect('Catalogo_Conceptos', { ID_Contrato: registro.ID_Contrato });
-                    const descNorm = normalizeText(registro.Descripcion || registro.Concepto || "");
-                    if (descNorm) {
-                        match = catalogoExistente.find(c => normalizeText(c.Descripcion) === descNorm);
+                // --- BÚSQUEDA POR LLAVE SECUNDARIA (skName) ---
+                if (!match && skName && registro[skName]) {
+                    const condSk = {}; condSk[skName] = registro[skName];
+                    const resSk = dbSelect(tabla, condSk);
+                    if (resSk && resSk.length > 0) {
+                        match = resSk[0];
                     }
                 }
 
-                // --- MATCH POR CLAVE (FALLBACK SI NO HAY MATCH POR DESCRIPCIÓN) ---
-                if (tabla === 'Catalogo_Conceptos' && !match && registro.Clave && registro.ID_Contrato) {
-                    const matchClave = dbSelect('Catalogo_Conceptos', { Clave: registro.Clave, ID_Contrato: registro.ID_Contrato });
-                    if (matchClave && matchClave.length > 0) match = matchClave[0];
+                // --- SMART MATCHING Y DE-DUPLICACIÓN (Hijos) ---
+                if (!match) {
+                    if (tabla === 'Catalogo_Conceptos' && registro.ID_Contrato) {
+                        // Match por Clave primero
+                        if (registro.Clave) {
+                            const resClave = dbSelect('Catalogo_Conceptos', { Clave: registro.Clave, ID_Contrato: registro.ID_Contrato });
+                            if (resClave && resClave.length > 0) match = resClave[0];
+                        }
+                        // Match por Descripción como fallback
+                        if (!match) {
+                            const descNorm = normalizeText(registro.Descripcion || registro.Concepto || "");
+                            if (descNorm) {
+                                const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: registro.ID_Contrato });
+                                match = catalogo.find(c => normalizeText(c.Descripcion) === descNorm);
+                            }
+                        }
+                    } else if (tabla === 'Programa' && registro.ID_Contrato) {
+                        const condProg = { ID_Contrato: registro.ID_Contrato };
+                        if (registro.Tipo_Programa) condProg.Tipo_Programa = registro.Tipo_Programa;
+                        const resProg = dbSelect('Programa', condProg);
+                        if (resProg && resProg.length > 0) match = resProg[0];
+                    } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa && registro.Periodo) {
+                        const resPer = dbSelect('Programa_Periodo', { ID_Numero_Programa: registro.ID_Numero_Programa, Periodo: registro.Periodo });
+                        if (resPer && resPer.length > 0) match = resPer[0];
+                    } else if (tabla === 'Matriz_Insumos' && registro.ID_Concepto && registro.Clave_Insumo) {
+                        const resMat = dbSelect('Matriz_Insumos', { ID_Concepto: registro.ID_Concepto, Clave_Insumo: registro.Clave_Insumo });
+                        if (resMat && resMat.length > 0) match = resMat[0];
+                    } else if (tabla === 'Programa_Ejecucion' && registro.ID_Numero_Programa && registro.ID_Concepto && registro.ID_Programa_Periodo) {
+                        const resEjec = dbSelect('Programa_Ejecucion', {
+                            ID_Numero_Programa: registro.ID_Numero_Programa,
+                            ID_Concepto: registro.ID_Concepto,
+                            ID_Programa_Periodo: registro.ID_Programa_Periodo
+                        });
+                        if (resEjec && resEjec.length > 0) match = resEjec[0];
+                    }
                 }
 
-                // --- REGLAS DE NEGOCIO PARA MATRICES (TIPO NUMÉRICO) ---
+                // --- REGLAS DE NEGOCIO PARA MATRICES ---
                 if (tabla === 'Matriz_Insumos') {
-                    // Mapeo de Tipo de Insumo a Numérico: 1:Material, 2:ManoObra, 3:Equipo
                     const t = String(registro.Tipo_Insumo || registro.Tipo || "").toLowerCase();
                     if (t.includes('material')) registro.Tipo_Insumo = 1;
-                    else if (t.includes('mano') || t.includes('jornal') || t.includes('cuadrilla') || t.includes('ayudante') || t.includes('especialista') || t.includes('gerente') || t.includes('tecnico')) registro.Tipo_Insumo = 2;
-                    else if (t.includes('equipo') || t.includes('herra') || t.includes('maquin') || t.includes('vehiculo') || t.includes('computadora')) registro.Tipo_Insumo = 3;
+                    else if (t.includes('mano') || t.includes('jornal') || t.includes('cuadrilla')) registro.Tipo_Insumo = 2;
+                    else if (t.includes('equipo') || t.includes('herra') || t.includes('maquin')) registro.Tipo_Insumo = 3;
                     else if (!isNaN(parseInt(t))) registro.Tipo_Insumo = parseInt(t);
-                    else registro.Tipo_Insumo = 1; // Default Materials
-
-                    // Asegurar que solo exista Tipo_Insumo según esquema
+                    else registro.Tipo_Insumo = 1;
                     delete registro.Tipo;
                 }
 
-                if (!match && skName && registro[skName]) {
-                    const cond = {}; cond[skName] = registro[skName];
-                    const res = dbSelect(tabla, cond);
-                    if (res && res.length > 0) {
-                        match = res[0];
-                        registro[pkName] = match[pkName];
-                    }
-                }
-
-                // --- COMPOSITE UNIQUE CHECKS FOR MASS IMPORTERS ---
-                if (!match) {
-                    if (tabla === 'Catalogo_Conceptos' && registro.Clave && registro.ID_Contrato) {
-                        const res = dbSelect(tabla, { Clave: registro.Clave, ID_Contrato: registro.ID_Contrato });
-                        if (res && res.length > 0) {
-                            match = res[0];
-                            registro[pkName] = match[pkName];
-                        }
-                    }
-                    else if (tabla === 'Estimaciones' && registro.No_Estimacion && registro.ID_Contrato) {
-                        const res = dbSelect(tabla, { No_Estimacion: registro.No_Estimacion, ID_Contrato: registro.ID_Contrato });
-                        if (res && res.length > 0) {
-                            match = res[0];
-                            registro[pkName] = match[pkName];
-                        }
-                    }
-                    else if (tabla === 'Detalle_Estimacion' && registro.ID_Estimacion && registro.ID_Concepto) {
-                        const res = dbSelect(tabla, { ID_Estimacion: registro.ID_Estimacion, ID_Concepto: registro.ID_Concepto });
-                        if (res && res.length > 0) {
-                            match = res[0];
-                            registro[pkName] = match[pkName];
-                        }
-                    }
-                    else if (tabla === 'Matriz_Insumos' && registro.ID_Concepto && registro.Clave_Insumo) {
-                        const res = dbSelect(tabla, { ID_Concepto: registro.ID_Concepto, Clave_Insumo: registro.Clave_Insumo });
-                        if (res && res.length > 0) {
-                            match = res[0];
-                            registro[pkName] = match[pkName];
-                        }
-                    }
-                }
-
                 if (match) {
-                    const cond = {}; cond[pkName] = match[pkName];
                     const dataMerged = { ...match };
-
-                    // --- REGLA DE PERSISTENCIA (Priorizar DB sobre IA) ---
-                    // Si es un concepto existente, evitamos que la IA sobrescriba campos base 
-                    // a menos que estén vacíos en la base de datos.
-                    const camposProtegidos = (tabla === 'Catalogo_Conceptos')
-                        ? ['Clave', 'Descripcion', 'Unidad']
-                        : [];
+                    const camposProtegidos = (tabla === 'Catalogo_Conceptos') ? ['Clave', 'Descripcion', 'Unidad'] : [];
 
                     Object.keys(registro).forEach(k => {
                         if (registro[k] !== undefined && registro[k] !== null && registro[k] !== '') {
-                            // Solo sobreescribir si el campo no está protegido o si el valor en DB es nulo/vacío
                             if (!camposProtegidos.includes(k) || !match[k]) {
                                 dataMerged[k] = registro[k];
                             }
                         }
                     });
 
-                    // En contexto de Matrices, forzar reglas incluso en actualización
-                    if (tabla === 'Catalogo_Conceptos' && (datos.Matriz_Insumos || datos.Análisis_P_U)) {
-                        dataMerged.Cantidad_Contratada = 1;
-                        const pu = parseFloat(dataMerged.Precio_Unitario || 0);
-                        dataMerged.Importe_Total_Sin_IVA = pu.toFixed(2);
-                    }
-
                     dbUpdate(tabla, dataMerged, { [pkName]: match[pkName] });
                     resultados.actualizados++;
-
-                    // Guardar mapa por si había un ID temporal
+                    if (pkName === 'ID_Contrato') resultados.ids.ID_Contrato = match[pkName];
                     if (idOriginalDadoPorIA) mapaIds[idOriginalDadoPorIA] = match[pkName];
+                    ultimosIdsInsertados[tabla] = match[pkName];
 
                 } else {
-                    // Al insertar conceptos nuevos vía Matrices, aplicar reglas de Orden y Cantidad
                     if (tabla === 'Catalogo_Conceptos') {
-                        registro.Cantidad_Contratada = 1;
-                        const pu = parseFloat(registro.Precio_Unitario || 0);
-                        registro.Importe_Total_Sin_IVA = pu.toFixed(2);
-
-                        // Generar Orden si no existe
+                        registro.Cantidad_Contratada = registro.Cantidad_Contratada || 1;
                         if (!registro.Orden) {
                             const last = dbSelect('Catalogo_Conceptos', { ID_Contrato: registro.ID_Contrato });
                             registro.Orden = (last ? last.length : 0) + 1;
                         }
                     }
 
-                    // Limpiar el PK temporal para que Code.gs asigne el consecutivo numérico real
-                    if (idOriginalDadoPorIA) {
-                        delete registro[pkName];
-                    }
+                    if (idOriginalDadoPorIA) delete registro[pkName];
 
                     const resInsert = dbInsert(tabla, registro);
                     resultados.insertados++;
+                    const newId = resInsert[pkName] || registro[pkName];
 
-                    // Registrar el nuevo ID real para actualizar a los hijos que iterarán después
-                    if (idOriginalDadoPorIA && resInsert.success && resInsert.insertId) {
-                        mapaIds[idOriginalDadoPorIA] = resInsert.insertId;
+                    if (newId) {
+                        registro[pkName] = newId;
+                        ultimosIdsInsertados[tabla] = newId;
+                        if (pkName === 'ID_Contrato') resultados.ids.ID_Contrato = newId;
+                        if (idOriginalDadoPorIA) mapaIds[idOriginalDadoPorIA] = newId;
                     }
                 }
             });
