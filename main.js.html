@@ -464,28 +464,37 @@
 
 
             htmlRows += `
-      <tr class="hover:bg-inst-crema/10 transition-all duration-200 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
-        <td class="px-8 py-2 border-b border-slate-50 bg-white">
-            <p class="text-inst-vino font-black italic uppercase tracking-tight group-hover:translate-x-1 transition-transform duration-300">
-                ${contrato.Numero_Contrato || '-'}
-            </p>
+      <tr class="hover:bg-slate-50 transition-all duration-300 cursor-pointer group" onclick="cargarVista('contrato_detalle.vw', { id: '${contrato.ID_Contrato}' })">
+        <td class="px-12 py-6 border-b border-slate-100/80 align-middle">
+            <div class="flex items-center">
+                <div class="w-10 h-10 rounded-xl bg-inst-vino/5 text-inst-vino flex items-center justify-center mr-4 group-hover:bg-inst-vino group-hover:text-white transition-colors duration-300 shadow-sm shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                </div>
+                <p class="text-[16px] text-slate-800 font-black uppercase tracking-tight group-hover:text-inst-vino transition-colors duration-300">
+                    ${contrato.Numero_Contrato || '-'}
+                </p>
+            </div>
         </td>
-        <td class="px-8 py-2 border-b border-slate-50 bg-white">
-          <p class="text-slate-600 font-bold truncate max-w-sm" title="${contrato.Objeto_Contrato || ''}">
+        <td class="px-12 py-6 border-b border-slate-100/80 align-middle">
+          <p class="text-[15px] text-slate-600 font-bold leading-tight line-clamp-2 pr-6" title="${contrato.Objeto_Contrato || ''}">
             ${contrato.Objeto_Contrato || '-'}
           </p>
         </td>
-        <td class="px-8 py-2 border-b border-slate-50 bg-white text-right">
-            <p class="text-slate-900 font-black tracking-tighter">${formatoMonto}</p>
+        <td class="px-12 py-6 border-b border-slate-100/80 align-middle text-right">
+            <p class="text-[17px] text-slate-800 font-extrabold tracking-tight">${formatoMonto}</p>
         </td>
-        <td class="px-8 py-2 border-b border-slate-50 bg-white text-center">
-            <span class="inline-flex items-center px-1 py-1 rounded-full text-sm font-black uppercase tracking-wider shadow-sm ${colorEstado}">
-                <span class="w-1.5 h-1.5 rounded-full mr-2 opacity-75 ${colorEstado.split(' ')[0].replace('bg-', 'bg-')}"></span>
-                ${estadoLabel}
-            </span>
+        <td class="px-12 py-6 border-b border-slate-100/80 align-middle text-center">
+            <div class="flex flex-col items-center justify-center">
+                <span class="inline-flex items-center px-4 py-1.5 rounded-full text-[13px] font-black uppercase tracking-widest ${colorEstado} shadow-sm border">
+                    ${estadoLabel}
+                </span>
+            </div>
+            <div class="absolute right-4 mt-[-20px] inline-flex opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-x-1 group-hover:translate-x-0">
+                <svg class="w-5 h-5 text-inst-vino" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+            </div>
         </td>
       </tr>
-    `;
+      `;
         });
 
         tbody.innerHTML = htmlRows;
@@ -2151,6 +2160,9 @@
                 .withSuccessHandler(function (resIA) {
                     if (resIA && resIA.success) {
                         const datosExtraidos = resIA.data.datos || resIA.data; // Compatibilidad con estructura nueva o vieja
+                        // Preservar metadatos críticos para guardarDatosIA
+                        datosExtraidos.tipo_documento = resIA.data.tipo_documento;
+                        datosExtraidos.parentContext = resIA.data.parentContext;
                         const informeAuditoria = resIA.data.informe_auditoria || null;
                         const checklistAuditoria = resIA.data.checklist_auditoria || null;
 
@@ -2382,10 +2394,10 @@
                 // Guardar datos en memoria para el siguiente paso
                 if (step === 2) {
                     // ID_Convenio si se creó/encontró
-                    idConvenioExtraido = resultado?.ids?.ID_Convenio || null;
+                    idConvenioExtraido = resultado?.ids?.Convenios_Recurso || null;
                 } else if (step === 1) {
                     // ID_Contrato obtenido del paso 1
-                    idContratoExtraido = resultado?.ids?.ID_Contrato || null;
+                    idContratoExtraido = resultado?.ids?.Contratos || null;
                 } else if (step === 3) {
                     // El catálogo de conceptos para el matching de APU
                     catalogoConceptosExtraido = resultado?.datos?.Catalogo_Conceptos || null;
@@ -2944,6 +2956,13 @@
         // Inyectar contexto de contrato si estamos en detalle
         if (window.idContratoActual) {
             datos.ID_Contrato_Contexto = window.idContratoActual;
+        }
+        // Preservar parentContext si no venía en los datos
+        if (!datos.parentContext) {
+            datos.parentContext = {
+                ID_Contrato: window.idContratoActual || null,
+                ID_Concepto: window.idConceptoMatrizActual || null
+            };
         }
 
         // Si el modal de importación sigue abierto, actualizar status allí
