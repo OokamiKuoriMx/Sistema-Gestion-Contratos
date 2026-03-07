@@ -49,7 +49,13 @@
     }
 
     #sidebar.collapsed .sidebar-header-text {
+        opacity: 0;
+        width: 0;
         display: none;
+    }
+
+    #toggle-icon {
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
     .nav-link {
@@ -137,5 +143,43 @@
     ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
+    }
+
+    /* Dashboard V2 Specific Styles */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+
+    .glass-card-dark {
+        background: rgba(22, 26, 29, 0.8);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .metric-trend-up {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .metric-trend-down {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .hero-gradient {
+        background: linear-gradient(135deg, var(--inst-vino) 0%, var(--inst-vino-dark) 100%);
+    }
+
+    .card-hover-effect {
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .card-hover-effect:hover {
+        transform: translateY(-8px) scale(1.01);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
     }
 </style>
