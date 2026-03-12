@@ -254,70 +254,125 @@
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <!-- Columna 1: Garantías y Fianzas -->
-                                <div class="space-y-4">
-                                    <h4
-                                        class="text-sm font-black text-slate-400 uppercase tracking-wider flex items-center mb-2">
-                                        <span class="w-1.5 h-1.5 bg-inst-oro rounded-full mr-2"></span>
-                                        Garantías y Esquema de Anticipo
-                                    </h4>
-                                    <div class="grid grid-cols-1 gap-2">
+                                <div class="space-y-6">
+                                    <div>
+                                        <h4
+                                            class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center mb-3">
+                                            <span class="w-2 h-2 bg-inst-oro rounded-full mr-2"></span>
+                                            Esquema de Anticipo
+                                        </h4>
                                         <div
-                                            class="bg-inst-crema/10 p-2 rounded-2xl border border-inst-oro/10 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-inst-oro">
+                                            class="bg-inst-crema/10 p-3 rounded-2xl border border-inst-oro/10 flex justify-between items-center shadow-sm">
+                                            <p class="text-xs font-black uppercase tracking-wider text-inst-oro">
                                                 Anticipo Amortizable</p>
                                             <p id="lbl-amortizacion-anticipo"
                                                 class="text-sm font-black text-inst-vino tracking-tighter italic">0.00%
                                             </p>
                                         </div>
-                                        <div
-                                            class="bg-slate-50 p-2 rounded-2xl border border-slate-100 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-slate-400">Fianza
-                                                Cumplimiento</p>
-                                            <p id="lbl-fianza-cumplimiento"
-                                                class="text-sm font-mono font-bold text-slate-700">...</p>
-                                        </div>
-                                        <div
-                                            class="bg-slate-50 p-2 rounded-2xl border border-slate-100 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-slate-400">Fianza
-                                                Anticipo</p>
-                                            <p id="lbl-fianza-anticipo"
-                                                class="text-sm font-mono font-bold text-slate-700">
-                                                ...</p>
+                                    </div>
+
+                                    <div>
+                                        <h4
+                                            class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center mb-3">
+                                            <span class="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                                            Garantías (Fianzas)
+                                        </h4>
+                                        <div class="space-y-2">
+                                            <div onclick="abrirModalAnalisisFianza('Cumplimiento')"
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-all group">
+                                                <div>
+                                                    <p
+                                                        class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+                                                        Cumplimiento</p>
+                                                    <p id="lbl-fianza-cumplimiento"
+                                                        class="text-xs font-mono font-bold text-slate-700">...</p>
+                                                    <p id="lbl-afianzadora-cumplimiento"
+                                                        class="text-[9px] font-bold text-slate-400 uppercase italic truncate max-w-[150px]"></p>
+                                                </div>
+                                                <span id="lbl-pct-fianza-cumplimiento"
+                                                    class="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">0%</span>
+                                            </div>
+                                            <div onclick="abrirModalAnalisisFianza('Anticipo')"
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-all group">
+                                                <div>
+                                                    <p
+                                                        class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+                                                        Anticipo</p>
+                                                    <p id="lbl-fianza-anticipo"
+                                                        class="text-xs font-mono font-bold text-slate-700">...</p>
+                                                    <p id="lbl-afianzadora-anticipo"
+                                                        class="text-[9px] font-bold text-slate-400 uppercase italic truncate max-w-[150px]"></p>
+                                                </div>
+                                                <span id="lbl-pct-fianza-anticipo"
+                                                    class="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">0%</span>
+                                            </div>
+                                            <div onclick="abrirModalAnalisisFianza('Vicios Ocultos')"
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-all group">
+                                                <div>
+                                                    <p
+                                                        class="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+                                                        Vicios Ocultos</p>
+                                                    <p id="lbl-fianza-vicios-ocultos"
+                                                        class="text-xs font-mono font-bold text-slate-700">...</p>
+                                                    <p id="lbl-afianzadora-vicios-ocultos"
+                                                        class="text-[9px] font-bold text-slate-400 uppercase italic truncate max-w-[150px]"></p>
+                                                </div>
+                                                <span id="lbl-pct-fianza-vicios-ocultos"
+                                                    class="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">0%</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Columna 2: Penas y Retenciones -->
-                                <div class="space-y-4">
-                                    <h4
-                                        class="text-sm font-black text-slate-400 uppercase tracking-wider flex items-center mb-2">
-                                        <span class="w-1.5 h-1.5 bg-rose-500 rounded-full mr-2"></span>
-                                        Penas y Retenciones de Ley
-                                    </h4>
-                                    <div class="grid grid-cols-1 gap-2">
+                                <div class="space-y-6">
+                                    <div>
+                                        <h4
+                                            class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center mb-3">
+                                            <span class="w-2 h-2 bg-rose-500 rounded-full mr-2"></span>
+                                            Penas Convencionales
+                                        </h4>
                                         <div
-                                            class="bg-rose-50/30 p-2 rounded-2xl border border-rose-100 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-rose-400">Pena
-                                                Convencional</p>
+                                            class="bg-rose-50/40 p-3 rounded-2xl border border-rose-100 flex justify-between items-center shadow-sm">
+                                            <p class="text-xs font-black uppercase tracking-wider text-rose-500">Pena
+                                                Máxima Aplicable</p>
                                             <p id="lbl-penas-convencionales"
                                                 class="text-sm font-black text-rose-600 tracking-tighter italic">0.00%
                                             </p>
                                         </div>
-                                        <div
-                                            class="bg-slate-50 p-2 rounded-2xl border border-slate-100 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-slate-400">
-                                                Retención Vigilancia</p>
-                                            <p id="lbl-retencion-vigilancia" class="text-sm font-black text-slate-700">
-                                                0.00%
-                                            </p>
-                                        </div>
-                                        <div
-                                            class="bg-slate-50 p-2 rounded-2xl border border-slate-100 flex justify-between items-center">
-                                            <p class="text-sm font-black uppercase tracking-wider text-slate-400">Otras
-                                                Retenciones</p>
-                                            <p id="lbl-otras-retenciones" class="text-sm font-black text-slate-700">
-                                                0.00%
-                                            </p>
+                                    </div>
+
+                                    <div>
+                                        <h4
+                                            class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center mb-3">
+                                            <span class="w-2 h-2 bg-slate-500 rounded-full mr-2"></span>
+                                            Retenciones de Ley
+                                        </h4>
+                                        <div class="space-y-2">
+                                            <div
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center">
+                                                <p
+                                                    class="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    Vigilancia (0.5% SFP/ISN)</p>
+                                                <p id="lbl-retencion-vigilancia"
+                                                    class="text-sm font-black text-slate-700">0.00%</p>
+                                            </div>
+                                            <div
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center">
+                                                <p
+                                                    class="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    Incumplimiento / Retención</p>
+                                                <p id="lbl-retencion-incumplimiento"
+                                                    class="text-sm font-black text-slate-700">0.00%</p>
+                                            </div>
+                                            <div
+                                                class="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex justify-between items-center">
+                                                <p
+                                                    class="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    Otras Retenciones</p>
+                                                <p id="lbl-otras-retenciones" class="text-sm font-black text-slate-700">
+                                                    0.00%</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -419,21 +474,48 @@
                     <h3 class="text-sm font-bold text-inst-vino uppercase tracking-wider">Listado de Conceptos
                         Contractuales
                     </h3>
-                    <div class="flex space-x-3">
-                        <button onclick="abrirImportadorIAMatricesGlobal()"
-                            class="bg-white hover:bg-slate-50 text-purple-600 border border-purple-200 px-2 py-1 rounded-lg text-sm font-bold uppercase tracking-wider shadow-sm transition-all flex items-center group">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Importar Catálogo -->
+                        <button onclick="abrirImportadorIACatalogo()"
+                            class="bg-white hover:bg-slate-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-sm transition-all flex items-center group">
                             <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" fill="none"
                                 stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                                 </path>
                             </svg>
-                            Importar Matrices
+                            Importar Catálogo (IA)
                         </button>
+
+                        <!-- Importar Programa -->
+                        <button onclick="abrirImportadorIAPrograma()"
+                            class="bg-white hover:bg-slate-50 text-purple-600 border border-purple-200 px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-sm transition-all flex items-center group">
+                            <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            Importar Programa (IA)
+                        </button>
+
+                        <!-- Importar Matrices -->
+                        <button onclick="abrirImportadorIAMatricesGlobal()"
+                            class="bg-white hover:bg-slate-50 text-emerald-600 border border-emerald-200 px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-sm transition-all flex items-center group">
+                            <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                                </path>
+                            </svg>
+                            Importar Matrices (IA)
+                        </button>
+
+                        <!-- Agregar Concepto Manual -->
                         <button onclick="agregarConceptoInPlace()"
-                            class="bg-inst-vino hover:bg-inst-negro text-white px-2 py-1 rounded-lg text-sm font-bold uppercase tracking-wider shadow-lg shadow-inst-vino/20 transition-all flex items-center">
+                            class="bg-inst-vino hover:bg-inst-negro text-white px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider shadow-lg shadow-inst-vino/20 transition-all flex items-center">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
                                     d="M12 4v16m8-8H4">
                                 </path>
                             </svg>
@@ -504,6 +586,16 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
+                            <button onclick="abrirImportadorIAPrograma()"
+                                class="bg-white hover:bg-slate-50 text-purple-600 border border-purple-200 px-6 py-3 rounded-2xl text-sm font-black uppercase tracking-wider shadow-sm transition-all flex items-center group">
+                                <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                        d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                Importar Programa (IA)
+                            </button>
                             <button onclick="abrirModalConfigPrograma()"
                                 class="group bg-white hover:bg-slate-50 text-inst-vino border border-slate-200 px-6 py-3 rounded-2xl text-sm font-black uppercase tracking-wider shadow-sm transition-all flex items-center">
                                 <svg class="w-4 h-4 mr-2 group-hover:rotate-12 transition-transform" fill="none"
@@ -530,7 +622,7 @@
                     <!-- Lista de Periodos Premium -->
                     <div id="lista-periodos-container"
                         class="mt-10 hidden p-6 bg-slate-50/50 rounded-[2rem] border border-slate-100">
-                        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9 gap-2"
+                        <div class="flex flex-nowrap overflow-x-auto pb-4 gap-4 scrollbar-premium"
                             id="lista-periodos-chips">
                             <!-- Chips de periodos generados dinámicamente -->
                         </div>
@@ -651,394 +743,230 @@
                         </div>
 
                         <!-- Detalle de la Estimación Seleccionada (Carátula) -->
-                        <div class="lg:col-span-12 bg-[#F8F9FA] rounded-[3rem] border border-slate-200 shadow-2xl min-h-[600px] overflow-hidden hidden"
+                        <div class="lg:col-span-12 bg-white rounded-[3rem] border border-slate-200 shadow-2xl min-h-[800px] overflow-hidden hidden"
                             id="container-detalle-estimacion">
-                            <!-- Header Carátula con Glassmorphism -->
-                            <div class="bg-inst-vino px-12 py-16 text-white relative overflow-hidden">
-                                <!-- Decoración de fondo -->
-                                <div
-                                    class="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-white/5 to-transparent pointer-events-none">
-                                </div>
-                                <div
-                                    class="absolute -top-24 -right-24 w-96 h-96 bg-inst-oro/10 rounded-full blur-3xl pointer-events-none">
-                                </div>
-
-                                <div class="relative z-10">
-                                    <div
-                                        class="flex flex-col lg:flex-row justify-between items-start lg:items-center w-full gap-8">
-                                        <div class="flex items-center space-x-8">
-                                            <div
-                                                class="bg-white/10 p-1 rounded-[2.5rem] backdrop-blur-xl border border-white/20 shadow-2xl">
-                                                <div
-                                                    class="bg-inst-vino/40 px-8 py-6 rounded-[2.2rem] text-center min-w-[160px] border border-white/5">
-                                                    <span
-                                                        class="text-sm font-black uppercase tracking-wider block text-inst-oro-light/60 mb-2">Estimación</span>
-                                                    <h4 id="lbl-detalle-no-est"
-                                                        class="text-5xl font-black tracking-tighter text-white drop-shadow-lg">
-                                                        --</h4>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div class="flex items-center space-x-3 mb-3">
-                                                    <span
-                                                        class="px-4 py-1.5 bg-inst-oro text-inst-vino text-sm font-black uppercase tracking-wider rounded-full shadow-lg">Documento
-                                                        Oficial</span>
-                                                    <span class="h-1 w-1 bg-white/30 rounded-full"></span>
-                                                    <p id="lbl-detalle-periodo-texto"
-                                                        class="text-sm font-bold text-inst-oro-light uppercase tracking-wider">
-                                                        Periodo: -- al --</p>
-                                                </div>
-                                                <h3
-                                                    class="text-4xl font-black tracking-tighter uppercase text-white leading-none">
-                                                    Carátula de Estimación <span
-                                                        class="text-inst-oro-light">Definitiva</span>
-                                                </h3>
-                                            </div>
+                            
+                            <!-- Header de Carátula: Diseño Ejecutivo -->
+                            <div class="bg-inst-vino px-10 py-12 text-white relative overflow-hidden">
+                                <div class="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-white/5 to-transparent pointer-events-none"></div>
+                                <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                    <div class="flex items-center gap-6">
+                                        <div class="bg-white/10 backdrop-blur-md px-6 py-4 rounded-[2rem] border border-white/20 text-center shadow-xl">
+                                            <span class="text-[10px] font-black uppercase tracking-[0.2em] text-inst-oro-light/70 block mb-1">Estimación</span>
+                                            <h4 id="lbl-detalle-no-est" class="text-4xl font-black tracking-tighter">--</h4>
                                         </div>
-                                        <div class="flex space-x-4 items-center self-end lg:self-center">
-                                            <button onclick="abrirImportadorIAEstimaciones()"
-                                                class="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-[1.5rem] transition-all duration-300 border border-emerald-400/30 flex items-center group shadow-xl hover:scale-105 active:scale-95"
-                                                title="Auditar este borrador con IA">
-                                                <div
-                                                    class="bg-white/20 p-2 rounded-xl mr-3 group-hover:bg-white/30 transition-colors">
-                                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor"
-                                                        viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                                            stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                                    </svg>
-                                                </div>
-                                                <span class="text-sm font-black uppercase tracking-widest">Auditar con
-                                                    IA</span>
-                                            </button>
-                                            <button onclick="cerrarDetalleEstimacion()"
-                                                class="p-4 bg-white/10 hover:bg-rose-600/80 text-white rounded-2xl transition-all duration-300 border border-white/10 shadow-lg hover:rotate-90"
-                                                title="Cerrar detalle">
-                                                <svg class="w-6 h-6" fill="none" stroke="currentColor"
-                                                    viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                                        stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
-                                                </svg>
-                                            </button>
+                                        <div>
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <span class="px-3 py-1 bg-inst-oro text-inst-vino text-[10px] font-black uppercase tracking-widest rounded-full">Carátula Oficial</span>
+                                                <span class="w-1 h-1 bg-white/30 rounded-full"></span>
+                                                <p id="lbl-detalle-periodo-texto" class="text-xs font-bold text-inst-oro-light tracking-wide uppercase">Periodo: -- al --</p>
+                                            </div>
+                                            <h3 class="text-3xl font-black tracking-tight leading-none uppercase">Detalle de Avance de Obra</h3>
                                         </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <button onclick="abrirImportadorIAEstimaciones()" 
+                                            class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-2xl transition-all border border-emerald-400/30 flex items-center gap-2 group shadow-lg">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                            <span class="text-[11px] font-black uppercase tracking-widest">Auditar con IA</span>
+                                        </button>
+                                        <button onclick="cerrarDetalleEstimacion()" 
+                                            class="p-3 bg-white/10 hover:bg-rose-600 text-white rounded-2xl transition-all border border-white/10 hover:rotate-90">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-                            <!-- Panel de Auditoría e Inteligencia -->
-                            <div class="px-12 py-6 bg-[#F0F2F5] border-b border-slate-200">
-                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-                                    <!-- Izquierda: Título (8 cols) -->
-                                    <div class="lg:col-span-8 flex items-center space-x-6">
-                                        <div class="flex items-center space-x-3">
-                                            <div
-                                                class="p-3 bg-inst-vino/5 rounded-2xl border border-inst-vino/10 shadow-inner">
-                                                <svg class="w-6 h-6 text-inst-vino" fill="none" stroke="currentColor"
-                                                    viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                                        stroke-width="2"
-                                                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
-                                                    </path>
-                                                </svg>
+
+                            <!-- Panel de KPIs y Estatus: Organización de Alto Nivel -->
+                            <div class="p-10 bg-slate-50/50 border-b border-slate-200">
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    
+                                    <!-- KPI 1: Identificación -->
+                                    <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Expediente Contrato</span>
+                                        <div class="space-y-3">
+                                            <div>
+                                                <p class="text-[10px] text-slate-400 font-bold uppercase mb-0.5">No. Contrato</p>
+                                                <p id="lbl-caratula-num-contrato" class="text-sm font-black text-slate-700">--</p>
                                             </div>
                                             <div>
-                                                <h4
-                                                    class="text-base font-black text-slate-700 uppercase tracking-tighter">
-                                                    Verificación de Integridad IA</h4>
-                                                <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">
-                                                    Auditoría Digital de Expediente</p>
+                                                <p class="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Contratista</p>
+                                                <p id="lbl-caratula-contratista" class="text-xs font-black text-inst-vino truncate" id="lbl-caratula-contratista">--</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <!-- Derecha: Estatus Dictamen (4 cols) -->
-                                    <div class="lg:col-span-4">
-                                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-lg">
-                                            <div class="flex justify-between items-center mb-3">
-                                                <span
-                                                    class="text-sm font-black text-slate-400 uppercase tracking-wider">Estatus
-                                                    Dictamen</span>
-                                                <div class="flex items-center" id="lbl-status-switch">
-                                                    <span
-                                                        class="h-2.5 w-2.5 bg-amber-500 rounded-full mr-2 animate-ping"></span>
-                                                    <span class="text-sm font-black text-amber-600 uppercase">En
-                                                        Revisión</span>
-                                                </div>
-                                                <div class="flex items-center hidden" id="lbl-status-approved">
-                                                    <span class="h-2.5 w-2.5 bg-emerald-500 rounded-full mr-2"></span>
-                                                    <span
-                                                        class="text-sm font-black text-emerald-600 uppercase">Validada</span>
-                                                </div>
-                                            </div>
-                                            <label class="relative inline-flex items-center cursor-pointer w-full">
-                                                <input type="checkbox" id="switch-estado-aprobacion"
-                                                    class="sr-only peer" onchange="cambiarEstadoAprobacionManual(this)">
-                                                <div
-                                                    class="w-full h-12 bg-slate-100 peer-focus:outline-none rounded-xl peer peer-checked:bg-emerald-500/10 border-2 border-slate-200 peer-checked:border-emerald-500/50 transition-all flex items-center px-1">
-                                                    <div
-                                                        class="h-9 w-1/2 bg-white rounded-lg shadow-md transform transition-transform duration-300 peer-checked:translate-x-[90%]">
-                                                    </div>
-                                                    <div
-                                                        class="absolute inset-0 flex items-center justify-around pointer-events-none text-sm font-black uppercase tracking-wider text-slate-400">
-                                                        <span>Revisión</span>
-                                                        <span>Aprobar</span>
-                                                    </div>
-                                                </div>
-                                            </label>
+                                    <!-- KPI 2: Avance Físico -->
+                                    <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ejecución Física</span>
+                                            <span id="lbl-caratula-pct-avance" class="text-xl font-black text-inst-vino tracking-tight">0.00%</span>
+                                        </div>
+                                        <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4 border border-slate-100 shadow-inner">
+                                            <div id="bar-caratula-avance" class="h-full bg-inst-vino transition-all duration-1000 shadow-sm" style="width: 0%"></div>
+                                        </div>
+                                        <div class="flex justify-between items-center text-[10px]">
+                                            <span class="text-slate-400 font-bold uppercase">Acumulado</span>
+                                            <span id="lbl-caratula-avance-acum" class="font-black text-slate-700">0.00%</span>
+                                        </div>
+                                    </div>
 
-                                            <!-- Checklist Integrado como Lista Vertical -->
-                                            <div id="checklist-auditoria-container" class="mt-6 space-y-3">
-                                                <!-- Se poblará dinámicamente -->
-                                                <div
-                                                    class="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-4 flex items-center text-slate-400 italic text-xs font-bold uppercase tracking-widest justify-center">
-                                                    Esperando resultados de auditoría...
-                                                </div>
+                                    <!-- KPI 3: Alcance Líquido (Highlight) -->
+                                    <div class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl relative overflow-hidden group">
+                                        <div class="absolute -right-4 -top-4 opacity-[0.03] group-hover:scale-110 transition-transform">
+                                            <svg class="w-24 h-24 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.82v-1.91c-1.57-.24-3.07-.95-4.13-1.99l1.41-1.41c.8.78 1.93 1.34 3.09 1.51l.24.03v-3.78l-1.63-.42c-1.65-.43-3.07-1.12-3.07-2.92 0-1.4 1.1-2.58 2.64-3V5h2.82v1.94c1.1.2 2.14.71 2.94 1.41l-1.41 1.41c-.6-.5-1.39-.88-2.22-1.03l-.31-.05V11.1l1.63.43c1.92.51 3.23 1.32 3.23 3.1 0 1.54-1.25 2.82-3.23 3.46z"/></svg>
+                                        </div>
+                                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4 relative z-10">Alcance Líquido (Neto)</span>
+                                        <h4 id="val-caratula-neto" class="text-2xl font-black text-white tracking-tighter mb-2">$0.00</h4>
+                                        <div class="flex items-center gap-1.5 py-1 px-2.5 bg-emerald-500/10 rounded-lg w-fit border border-emerald-500/20">
+                                            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                                            <span class="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Periodo Vigente</span>
+                                        </div>
+                                    </div>
+                                    <!-- KPI 4: Desglose Fiscal Premium (Swapped) -->
+                                    <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative group overflow-hidden">
+                                        <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-slate-50 to-transparent -mr-12 -mt-12 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        
+                                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4 relative z-10">Desglose Fiscal</span>
+                                        
+                                        <div class="space-y-3 relative z-10">
+                                            <div class="flex justify-between items-center group/item">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Subtotal Bruto</span>
+                                                <span id="val-caratula-bruto" class="text-xs font-black text-slate-700 tracking-tighter">$0.00</span>
                                             </div>
+                                            <div class="flex justify-between items-center group/item">
+                                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-tight">I.V.A. (16%)</span>
+                                                <span id="val-caratula-iva" class="text-xs font-black text-slate-700 tracking-tighter">$0.00</span>
+                                            </div>
+                                            <div class="mt-2 py-2 px-3 bg-rose-50 rounded-xl border border-rose-100 flex justify-between items-center">
+                                                <span class="text-[9px] font-black text-rose-600 uppercase">Retención SFP</span>
+                                                <span id="val-caratula-sfp" class="text-xs font-black text-rose-700 tracking-tighter">-$0.00</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Indicador Visual -->
+                                        <div class="absolute bottom-2 right-4 opacity-0 group-hover:opacity-40 transition-opacity">
+                                            <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Financial Summary</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Datos Maestros Institucionales -->
-                            <div class="px-12 py-12">
-                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 border-b border-slate-100 pb-12">
-                                    <!-- Col 1: Expediente (3/12) -->
-                                    <div class="lg:col-span-4 space-y-8">
-                                        <div class="group">
-                                            <label
-                                                class="block text-sm font-black text-slate-400 uppercase tracking-wider mb-2 group-hover:text-inst-vino transition-colors">Identificador
-                                                de Contrato</label>
-                                            <p id="lbl-caratula-num-contrato"
-                                                class="text-base font-black text-slate-700 bg-slate-100/50 px-4 py-3 rounded-xl border border-slate-200/50">
-                                                --</p>
-                                        </div>
-                                        <div class="group">
-                                            <label
-                                                class="block text-sm font-black text-slate-400 uppercase tracking-wider mb-2 group-hover:text-inst-vino transition-colors">Entidad
-                                                Responsable (Contratista)</label>
-                                            <p id="lbl-caratula-contratista"
-                                                class="text-base font-black text-inst-vino bg-inst-crema/10 px-4 py-3 rounded-xl border border-inst-crema/20">
-                                                --</p>
-                                        </div>
-                                        <div class="group">
-                                            <label
-                                                class="block text-sm font-black text-slate-400 uppercase tracking-wider mb-2 group-hover:text-inst-vino transition-colors">Objeto
-                                                de los Trabajos</label>
-                                            <p id="lbl-caratula-objeto"
-                                                class="text-sm leading-relaxed text-slate-500 font-bold bg-white p-4 rounded-xl border border-slate-100 shadow-sm min-h-[100px] italic">
-                                                --</p>
-                                        </div>
-                                    </div>
-
-                                    <!-- Col 2: Avances (4/12) -->
-                                    <div
-                                        class="lg:col-span-4 space-y-6 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-2xl relative overflow-hidden">
-                                        <div class="absolute top-0 right-0 p-4 opacity-5">
-                                            <svg class="w-16 h-16 text-inst-vino" fill="currentColor"
-                                                viewBox="0 0 24 24">
-                                                <path
-                                                    d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
-                                            </svg>
-                                        </div>
-                                        <div class="flex justify-between items-end mb-2">
-                                            <span
-                                                class="text-sm font-black text-slate-400 uppercase tracking-wider">Ejecución
-                                                Física</span>
-                                            <span id="lbl-caratula-pct-avance"
-                                                class="text-2xl font-black text-inst-vino tracking-tighter">0.00%</span>
-                                        </div>
-                                        <div
-                                            class="relative w-full h-4 bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200">
-                                            <div id="bar-caratula-avance"
-                                                class="absolute top-0 left-0 h-full bg-gradient-to-r from-inst-vino to-rose-600 rounded-full transition-all duration-1000 shadow-lg"
-                                                style="width: 0%"></div>
-                                        </div>
-
-                                        <div class="grid grid-cols-2 gap-6 pt-6 border-t border-slate-50">
-                                            <div>
-                                                <span
-                                                    class="block text-sm font-black text-slate-300 uppercase tracking-wider mb-1">Acumulado</span>
-                                                <p id="lbl-caratula-avance-acum"
-                                                    class="text-base font-black text-slate-700">
-                                                    0.00%</p>
-                                            </div>
-                                            <div>
-                                                <span
-                                                    class="block text-sm font-black text-slate-300 uppercase tracking-wider mb-1">Importe
-                                                    Bruto</span>
-                                                <p id="lbl-caratula-bruto" class="text-base font-black text-inst-vino">
-                                                    $0.00
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div class="pt-4">
-                                            <div
-                                                class="flex items-center space-x-2 text-sm font-black text-emerald-600 uppercase tracking-wider bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100 inline-flex">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor"
-                                                    viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                                        stroke-width="3" d="M5 13l4 4L19 7"></path>
-                                                </svg>
-                                                <span>Progreso dentro de los límites</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Importe con Letra (NUEVO) -->
-                                    <div
-                                        class="lg:col-span-12 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-xl mb-6">
-                                        <span
-                                            class="block text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Importe
-                                            con Letra</span>
-                                        <p id="lbl-caratula-monto-letra"
-                                            class="text-lg font-black text-inst-vino italic uppercase tracking-tight">
-                                            (CARGANDO IMPORTE CON LETRA...)
-                                        </p>
-                                    </div>
-
-                                    <!-- Col 3: Liquidación Financiera (4/12) -->
-                                    <div
-                                        class="lg:col-span-4 bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] text-white shadow-2xl relative">
-                                        <div class="flex items-center space-x-3 mb-8">
-                                            <div
-                                                class="w-8 h-8 rounded-xl bg-inst-oro flex items-center justify-center text-inst-vino shadow-lg">
-                                                <svg class="w-5 h-5" fill="none" stroke="currentColor"
-                                                    viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                                        stroke-width="2.5"
-                                                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
-                                                    </path>
-                                                </svg>
-                                            </div>
-                                            <span
-                                                class="text-sm font-black uppercase tracking-wider text-slate-400">Desglose
-                                                Fiscal</span>
-                                        </div>
-
+                            <!-- Área Dinámica: Tabla y Desgloses Financiales -->
+                            <div class="p-0">
+                                <div class="grid grid-cols-1 lg:grid-cols-12">
+                                    
+                                    <!-- Sidebar Financiero (3 cols) -->
+                                    <div class="lg:col-span-3 bg-slate-50 border-r border-slate-200 p-8 space-y-8">
+                                        
+                                        <!-- Dictamen de Auditoría (Swapped to Sidebar) -->
                                         <div class="space-y-4">
-                                            <div class="flex justify-between items-center py-2 border-b border-white/5">
-                                                <span class="text-sm font-bold text-slate-500 uppercase">Subtotal
-                                                    Ejecutado</span>
-                                                <span id="val-caratula-bruto" class="text-base font-black">$0.00</span>
+                                            <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                                                <h5 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Dictamen Auditoría</h5>
+                                                <label class="relative inline-flex items-center cursor-pointer scale-75">
+                                                    <input type="checkbox" id="switch-estado-aprobacion" class="sr-only peer" onchange="cambiarEstadoAprobacionManual(this)">
+                                                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-all after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full shadow-sm"></div>
+                                                </label>
                                             </div>
-                                            <div class="flex justify-between items-center py-2 border-b border-white/5">
-                                                <span class="text-sm font-bold text-slate-500 uppercase">I.V.A.
-                                                    (16%)</span>
-                                                <span id="val-caratula-iva" class="text-base font-black">$0.00</span>
+
+                                            <div class="flex flex-wrap gap-2">
+                                                <div id="lbl-status-switch" class="flex items-center bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 w-fit">
+                                                    <span class="h-1.5 w-1.5 bg-amber-500 rounded-full mr-2 animate-pulse"></span>
+                                                    <span class="text-[9px] font-black text-amber-700 uppercase tracking-tight">En Revisión</span>
+                                                </div>
+                                                <div id="lbl-status-approved" class="flex items-center hidden bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 w-fit">
+                                                    <span class="h-1.5 w-1.5 bg-emerald-500 rounded-full mr-2"></span>
+                                                    <span class="text-[9px] font-black text-emerald-700 uppercase tracking-tight">Validada</span>
+                                                </div>
                                             </div>
-                                            <div
-                                                class="flex justify-between items-center py-3 px-4 bg-rose-950/30 rounded-xl border border-rose-900/40 text-rose-400">
-                                                <span class="text-sm font-black uppercase tracking-tighter">Retención
-                                                    SFP (0.5%)</span>
-                                                <span id="val-caratula-sfp" class="text-base font-black">-$0.00</span>
-                                            </div>
-                                            <div class="pt-6">
-                                                <div
-                                                    class="p-6 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10 shadow-lg group hover:border-inst-oro/30 transition-all">
-                                                    <span
-                                                        class="block text-sm font-black text-inst-oro uppercase tracking-wider mb-2 leading-none">Alcance
-                                                        Líquido</span>
-                                                    <span id="val-caratula-neto"
-                                                        class="text-3xl font-black text-white tracking-tighter">$0.00</span>
+
+                                            <div id="checklist-auditoria-container" class="space-y-2 max-h-[180px] overflow-y-auto pr-2 custom-scrollbar bg-white/50 p-4 rounded-2xl border border-slate-100">
+                                                <!-- Estado inicial -->
+                                                <div class="flex items-center gap-3 py-1">
+                                                    <div class="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center shrink-0">
+                                                        <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                    </div>
+                                                    <p class="text-[10px] text-slate-400 font-bold italic uppercase tracking-tighter leading-tight">Esperando auditoría digital...</p>
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <div class="space-y-6 pt-4">
+                                            <h5 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-200 pb-2">Objeto de Obra</h5>
+                                            <p id="lbl-caratula-objeto" class="text-[11px] text-slate-500 leading-relaxed font-bold italic px-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm min-h-[100px]">--</p>
+                                        </div>
+
+                                        <div class="pt-4">
+                                            <button id="btn-guardar-detalles-estimacion" onclick="guardarDetalleEstimacion()" disabled
+                                                class="w-full bg-inst-vino disabled:opacity-30 disabled:grayscale hover:bg-inst-negro text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-inst-vino/20 flex items-center justify-center gap-2">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                                                <span>Guardar Avances</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Main Table Area (9 cols) -->
+                                    <div class="lg:col-span-9 bg-white min-h-[600px]">
+                                        <div class="px-8 py-6 bg-white border-b border-slate-100 flex justify-between items-center">
+                                            <h4 class="text-[11px] font-black text-slate-700 uppercase tracking-widest">Generador de Conceptos Ejecutados</h4>
+                                            <div class="flex items-center gap-4">
+                                                <span class="text-[10px] font-black text-slate-400 bg-slate-100 px-3 py-1 rounded-lg uppercase">Moneda: MXN</span>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                                    <span class="text-[10px] font-bold text-slate-500 uppercase">Periodo Actual</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="overflow-x-auto max-h-[700px] overflow-y-auto custom-scrollbar">
+                                            <table class="min-w-full border-separate border-spacing-0">
+                                                <thead class="sticky top-0 z-20">
+                                                    <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider">
+                                                        <th colspan="3" class="px-6 py-4 text-left border-r border-white/5">Clasificación Básica</th>
+                                                        <th class="px-6 py-4 text-right border-r border-white/5">Prec. Uni</th>
+                                                        <th colspan="2" class="px-6 py-4 text-center border-r border-white/5 bg-slate-800">Historial Anterior</th>
+                                                        <th colspan="2" class="px-6 py-4 text-center border-r border-white/5 bg-emerald-700">Captura Actual</th>
+                                                        <th colspan="2" class="px-6 py-4 text-center bg-inst-oro text-inst-vino">Cierre de Periodo</th>
+                                                    </tr>
+                                                    <tr class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                                                        <th class="px-6 py-3 text-left border-r border-slate-200">Clave</th>
+                                                        <th class="px-6 py-3 text-left border-r border-slate-200 min-w-[250px]">Descripción</th>
+                                                        <th class="px-6 py-3 text-center border-r border-slate-200">Uni</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200">P.U.</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200 bg-slate-100/30">Cant</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200 bg-slate-100/30">Imp</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200 bg-emerald-50 text-emerald-700">Cantidad</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200 bg-emerald-50 text-emerald-700">Importe</th>
+                                                        <th class="px-6 py-3 text-right border-r border-slate-200 bg-inst-oro/5 text-inst-vino">Pct %</th>
+                                                        <th class="px-6 py-3 text-right bg-inst-oro/5 text-inst-vino">Subtotal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="tabla-detalle-estimacion-body" class="divide-y divide-slate-100">
+                                                    <!-- Se poblará dinámicamente -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <!-- Footer de Tabla: Resumen de Importe con Letra -->
+                                        <div class="px-8 py-8 bg-slate-50/50 border-t border-slate-100">
+                                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                                <div>
+                                                    <span class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Importe con Letra (Total Periodo)</span>
+                                                    <p id="lbl-caratula-monto-letra" class="text-xs font-black text-inst-vino italic uppercase">--</p>
+                                                </div>
+                                                <div class="text-right">
+                                                    <span class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Neto del Periodo</span>
+                                                    <span id="lbl-total-detalle-sin-iva" class="text-2xl font-black text-inst-vino tracking-tighter">$0.00</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- TABLA GENERADOR DE TRABAJOS (NUEVA ESTRUCTURA) -->
-                            <div class="mt-2 bg-white rounded-[3rem] border border-slate-200 shadow-xl overflow-hidden">
-                                <div
-                                    class="px-10 py-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                                    <h4 class="text-base font-black text-slate-500 uppercase tracking-wider">Generador
-                                        de Trabajos Ejecutados</h4>
-                                    <span
-                                        class="text-sm font-black text-slate-400 uppercase tracking-wider bg-slate-200/50 px-4 py-1.5 rounded-full">Moneda:
-                                        MXN</span>
-                                </div>
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-full border-collapse">
-                                        <thead>
-                                            <!-- Fila 1: Grupos de encabezado -->
-                                            <tr
-                                                class="bg-inst-vino text-white text-sm font-black uppercase tracking-wider border-b border-white/10">
-                                                <th colspan="3"
-                                                    class="px-6 py-4 text-left bg-inst-vino/90 border-r border-white/10">
-                                                    Base Operativa</th>
-                                                <th
-                                                    class="px-6 py-4 text-right bg-inst-vino/80 border-r border-white/10">
-                                                    Finanzas</th>
-                                                <th colspan="2"
-                                                    class="px-6 py-4 text-center bg-inst-vino/70 border-r border-white/10">
-                                                    Acumulado Anterior</th>
-                                                <th colspan="2"
-                                                    class="px-6 py-4 text-center bg-emerald-700/80 border-r border-white/10">
-                                                    Este Periodo</th>
-                                                <th colspan="2"
-                                                    class="px-6 py-4 text-center bg-inst-oro text-inst-vino uppercase">
-                                                    Cierre Actual</th>
-                                            </tr>
-                                            <!-- Fila 2: Columnas detalladas -->
-                                            <tr
-                                                class="bg-slate-50 text-slate-400 text-sm font-black uppercase tracking-wider border-b border-slate-200">
-                                                <th class="px-6 py-4 text-left border-r border-slate-100">Clave</th>
-                                                <th class="px-6 py-4 text-left border-r border-slate-100 min-w-[300px]">
-                                                    Descripción</th>
-                                                <th class="px-6 py-4 text-center border-r border-slate-100">Uni</th>
-                                                <th class="px-6 py-4 text-right border-r border-slate-100">P. Unitario
-                                                </th>
-
-                                                <th
-                                                    class="px-6 py-4 text-right border-r border-slate-100 bg-slate-100/30">
-                                                    Cant</th>
-                                                <th
-                                                    class="px-6 py-4 text-right border-r border-slate-100 bg-slate-100/30">
-                                                    Importe</th>
-
-                                                <th
-                                                    class="px-6 py-4 text-right border-r border-slate-100 bg-emerald-50/50 text-emerald-700">
-                                                    Cantidad</th>
-                                                <th
-                                                    class="px-6 py-4 text-right border-r border-slate-100 bg-emerald-50/50 text-emerald-700">
-                                                    Importe</th>
-
-                                                <th
-                                                    class="px-6 py-4 text-right border-r border-slate-100 bg-inst-oro/5 text-inst-vino">
-                                                    % Total</th>
-                                                <th class="px-6 py-4 text-right bg-inst-oro/5 text-inst-vino">Imp.
-                                                    Acumulado</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tabla-detalle-estimacion-body">
-                                            <!-- Se poblará dinámicamente -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <!-- Pie de Tabla y Botón de Acción -->
-                            <div
-                                class="px-10 py-8 bg-gradient-to-r from-slate-50 to-white border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-6">
-                                <div class="flex items-center space-x-6">
-                                    <div>
-                                        <span
-                                            class="block text-sm font-black text-slate-400 uppercase tracking-wider mb-1">Total
-                                            Estimación (Sin IVA)</span>
-                                        <span id="lbl-total-detalle-sin-iva"
-                                            class="text-xl font-black text-inst-vino tracking-tighter">$0.00</span>
-                                    </div>
-                                </div>
-                                <button id="btn-guardar-detalles-estimacion" onclick="guardarDetalleEstimacion()"
-                                    disabled
-                                    class="bg-inst-vino disabled:opacity-30 disabled:cursor-not-allowed hover:bg-inst-negro text-white px-10 py-4 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] transition-all duration-300 shadow-xl shadow-inst-vino/20 flex items-center space-x-3 hover:scale-105 active:scale-95">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-                                            d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                    <span>Guardar y Validar Avances</span>
-                                </button>
-                            </div>
-
-                        </div> <!-- cierre container-detalle-estimacion -->
+                        </div>
                     </div> <!-- cierre grid -->
                 </div> <!-- cierre p-8 -->
             </div> <!-- cierre tab-estimaciones -->
@@ -1255,17 +1183,208 @@
                 <p class="text-sm text-slate-400 font-bold uppercase tracking-wider max-w-[280px]">Al
                     guardar
                     cambios se actualizará la estructura de la matriz de ejecución.</p>
-                <div class="flex space-x-3 w-full sm:w-auto">
-                    <button onclick="cerrarModalConfigPrograma()"
-                        class="flex-1 sm:flex-none px-6 py-1 bg-white border border-slate-200 text-slate-500 text-sm font-black uppercase tracking-wider rounded-xl hover:bg-slate-50 transition-all shadow-sm">Cancelar</button>
-                    <button onclick="guardarCambiosEstructuraPrograma()"
-                        class="flex-1 sm:flex-none px-8 py-1 bg-inst-vino text-white text-sm font-black uppercase tracking-wider rounded-xl hover:bg-inst-negro transition-all shadow-lg shadow-inst-vino/20 active:transform active:scale-95">Guardar
-                        Cambios</button>
-                </div>
+                <button onclick="guardarCambiosEstructuraPrograma()"
+                    class="flex-1 sm:flex-none px-8 py-1 bg-inst-vino text-white text-sm font-black uppercase tracking-wider rounded-xl hover:bg-inst-negro transition-all shadow-lg shadow-inst-vino/20 active:transform active:scale-95">Guardar
+                    Cambios</button>
             </div>
         </div>
     </div>
 </div>
+</div>
+
+<!-- MODAL: ANÁLISIS DE FIANZA (IA) -->
+<div id="modal-fianza-analisis" class="fixed inset-0 z-[100] hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div
+            class="bg-white w-full max-w-4xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
+            <!-- Header -->
+            <div class="bg-inst-vino p-8 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-black text-white italic tracking-tighter uppercase">Análisis de Fianza con
+                        IA</h2>
+                    <p class="text-inst-oro text-xs font-bold uppercase tracking-[0.2em] opacity-80 mt-1">Validación vs
+                        Modelo DOF</p>
+                </div>
+                <button onclick="cerrarModalFianza()" class="text-white/50 hover:text-white transition-colors">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body (Scrollable) -->
+            <div class="p-8 space-y-6 flex-1 overflow-y-auto">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de
+                            Garantía</label>
+                        <select id="fianza-tipo-select"
+                            class="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-oro/20 transition-all">
+                            <option value="Cumplimiento">CUMPLIMIENTO</option>
+                            <option value="Anticipo">ANTICIPO</option>
+                            <option value="Vicios Ocultos">VICIOS OCULTOS</option>
+                        </select>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Acción
+                            Requerida</label>
+                        <select id="fianza-accion-select" onchange="toggleFianzaUploadArea()"
+                            class="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-inst-oro/20 transition-all">
+                            <option value="validar">VALIDAR ORIGINAL (IA)</option>
+                            <option value="borrador">REGISTRAR COMO BORRADOR</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Área de Carga (Visible por defecto para validar) -->
+                <div id="fianza-upload-area" class="space-y-4">
+                    <div id="fianza-drop-zone"
+                        class="border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center hover:border-inst-oro/50 transition-all group relative cursor-pointer bg-slate-50/50"
+                        onclick="document.getElementById('fianza-file-input').click()"
+                        ondragover="handleFianzaDragOver(event)" ondragleave="handleFianzaDragLeave(event)"
+                        ondrop="handleFianzaDrop(event)">
+                        <input type="file" id="fianza-file-input" class="hidden" accept=".pdf,image/*"
+                            onchange="handleFianzaFileSelect(this)">
+                        <div class="flex flex-col items-center pointer-events-none">
+                            <div
+                                class="w-16 h-16 bg-inst-crema/20 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform drop-zone-icon">
+                                <svg class="w-8 h-8 text-inst-oro" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                                    </path>
+                                </svg>
+                            </div>
+                            <p class="text-sm font-black text-slate-600 uppercase tracking-wider">Suelta tu Póliza aquí
+                            </p>
+                            <p class="text-xs text-slate-400 mt-1 font-bold">O haz clic para seleccionar (PDF o Imagen)
+                            </p>
+                        </div>
+                        <div id="fianza-file-name"
+                            class="hidden mt-4 p-2 bg-inst-oro/10 rounded-xl text-xs font-bold text-inst-vino uppercase tracking-wider italic">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resultado de IA (Oculto inicialmente) -->
+                <div id="fianza-resultado-ia" class="hidden space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+                    <div id="fianza-status-badge" class="p-4 rounded-2xl flex items-center justify-between border">
+                        <div class="flex items-center gap-3">
+                            <div id="fianza-status-icon" class="w-10 h-10 rounded-xl flex items-center justify-center">
+                            </div>
+                            <div>
+                                <p id="fianza-status-text" class="text-sm font-black uppercase tracking-widest"></p>
+                                <p id="fianza-confianza-text"
+                                    class="text-[10px] font-bold opacity-70 uppercase tracking-tighter"></p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p id="fianza-similitud-pct" class="text-lg font-black tracking-tighter italic"></p>
+                            <p class="text-[8px] font-black uppercase tracking-widest text-slate-400">Similitud DOF</p>
+                        </div>
+                    </div>
+
+                    <!-- Datos Extraídos (Nuevo) -->
+                    <div id="fianza-datos-extraidos"
+                        class="p-4 rounded-2xl bg-emerald-50/30 border border-emerald-100 hidden">
+                        <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            Datos Detectados para Registro
+                        </p>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase">No. Póliza</p>
+                                <p id="fianza-ia-numero" class="text-xs font-mono font-bold text-slate-700">---</p>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase">Importe</p>
+                                <p id="fianza-ia-monto" class="text-xs font-bold text-slate-700">---</p>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase">% Cubierto</p>
+                                <p id="fianza-ia-pct" class="text-xs font-bold text-slate-700">---</p>
+                            </div>
+                            <div class="col-span-2">
+                                <p class="text-[9px] font-black text-slate-400 uppercase">Afianzadora</p>
+                                <p id="fianza-ia-afianzadora" class="text-xs font-black text-inst-vino uppercase italic">---</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resumen Crítico (Nuevo) -->
+                    <div id="fianza-resumen-container"
+                        class="p-4 rounded-2xl bg-slate-50 border border-slate-100 hidden">
+                        <p
+                            class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                </path>
+                            </svg>
+                            Peritaje Técnico IA
+                        </p>
+                        <p id="fianza-resumen-texto" class="text-xs font-bold text-slate-600 leading-relaxed italic">
+                        </p>
+                    </div>
+
+                    <!-- Checklist Detallado (Nuevo) -->
+                    <div id="fianza-checklist-container" class="space-y-2 hidden">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Checklist
+                            de Cumplimiento DOF</p>
+                        <div id="fianza-checklist-grid" class="grid grid-cols-1 gap-2">
+                            <!-- Se poblará dinámicamente -->
+                        </div>
+                    </div>
+
+                    <div id="fianza-errores-container" class="bg-rose-50 border border-rose-100 rounded-2xl p-4 hidden">
+                        <p
+                            class="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-2 flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" />
+                            </svg>
+                            Discrepancias Graves
+                        </p>
+                        <ul id="fianza-lista-errores" class="text-xs font-bold text-rose-700 space-y-1 list-disc ml-4">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                <button onclick="cerrarModalFianza()"
+                    class="flex-1 px-6 py-4 rounded-2xl text-xs font-black text-slate-400 uppercase tracking-[0.2em] hover:bg-slate-200 transition-colors">
+                    Cancelar
+                </button>
+                <button id="btn-omitir-fianza" onclick="guardarFianzaForzada()"
+                    class="hidden flex-1 bg-slate-200 text-slate-600 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:bg-slate-300 active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <span>Omitir y Guardar</span>
+                </button>
+                <button id="btn-aplicar-fianza" onclick="guardarFianzaValidada()"
+                    class="hidden flex-[2] bg-emerald-600 text-white px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-600/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <span>Aplicar Validación</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </button>
+                <button id="btn-ejecutar-fianza" onclick="ejecutarAccionFianza()"
+                    class="flex-[2] bg-inst-vino text-inst-oro px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-inst-vino/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <span id="btn-fianza-text">Registrar Borrador</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                            d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- Modal: Editar Datos Generales del Contrato -->
 <div id="modal-editar-datos-generales" class="fixed inset-0 z-[110] hidden overflow-y-auto">
@@ -1278,7 +1397,7 @@
         <div
             class="relative bg-white w-full max-w-5xl rounded-[3rem] shadow-2xl overflow-hidden transform transition-all border border-white/20">
             <!-- Header Institucional -->
-            <div class="bg-rehilete-vino px-10 py-8 text-white relative overflow-hidden border-b-4 border-inst-oro">
+            <div class="bg-rehilete-vino px-6 py-4 text-white relative overflow-hidden border-b-4 border-inst-oro">
                 <div class="flex justify-between items-center relative z-10">
                     <div class="flex items-center space-x-5">
                         <div class="p-2 bg-white/10 rounded-[1.5rem] backdrop-blur-md border border-white/10">
@@ -1295,61 +1414,82 @@
                                 Actualización de Datos Generales y Contractuales</p>
                         </div>
                     </div>
-                    <button onclick="cerrarModalEditarDatosGenerales()"
-                        class="p-1 hover:bg-rose-600 rounded-2xl transition-all">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-                                d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
+                    <div class="flex items-center gap-4 relative z-20">
+                        <button type="button" onclick="abrirImportadorIAActualizarContrato()"
+                            class="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-xs font-black uppercase tracking-wider text-white transition-all shadow-sm group">
+                            <svg class="w-4 h-4 mr-2 text-inst-oro group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Actualizar con IA
+                        </button>
+                        <button type="button" onclick="cerrarModalEditarDatosGenerales()"
+                            class="p-1 hover:bg-rose-600 rounded-2xl transition-all">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                    d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
             <!-- Body -->
-            <form id="form-editar-datos-generales" class="p-10 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <form id="form-editar-datos-generales" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
                 <!-- Sección 1: Identificación -->
-                <div class="space-y-6">
+                <div class="space-y-3">
                     <div class="flex items-center space-x-3 text-blue-600">
                         <span class="text-sm font-black uppercase tracking-wider">01. Identificación y
                             Origen</span>
                         <div class="h-px bg-blue-100 flex-1"></div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">ID
+                                Convenio</label>
+                            <input type="text" name="ID_Convenio_Vinculado"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-mono font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">ID
+                                Contratista</label>
+                            <input type="text" name="ID_Contratista"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-mono font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
+                        </div>
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Objeto
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Objeto
                                 del Contrato</label>
                             <textarea name="Objeto_Contrato" rows="2"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none resize-none shadow-inner"></textarea>
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Área
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Área
                                 Responsable</label>
                             <input type="text" name="Area_Responsable"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
                             <label
-                                class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Ubicación
+                                class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Ubicación
                                 de la Obra</label>
                             <input type="text" name="Ubicacion_Obra"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">No.
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">No.
                                 Contrato</label>
                             <input type="text" name="Numero_Contrato"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">No.
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">No.
                                 Concurso</label>
                             <input type="text" name="No_Concurso"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
                             <label
-                                class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Modalidad
+                                class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Modalidad
                                 de Adjudicación</label>
                             <input type="text" name="Modalidad_Adjudicacion"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none shadow-inner">
@@ -1358,40 +1498,40 @@
                 </div>
 
                 <!-- Sección 2: Fechas y Plazos -->
-                <div class="space-y-6">
+                <div class="space-y-3">
                     <div class="flex items-center space-x-3 text-purple-600">
                         <span class="text-sm font-black uppercase tracking-wider">02. Tiempos de
                             Ejecución</span>
                         <div class="h-px bg-purple-100 flex-1"></div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Fecha
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Fecha
                                 Inicio</label>
                             <input type="date" name="Fecha_Inicio_Obra"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Fecha
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Fecha
                                 Término</label>
                             <input type="date" name="Fecha_Fin_Obra"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Plazo
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Plazo
                                 (Días)</label>
                             <input type="number" name="Plazo_Ejecucion_Dias"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Fecha
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Fecha
                                 Adjudicación</label>
                             <input type="date" name="Fecha_Adjudicacion"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Fecha
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Fecha
                                 Firma</label>
                             <input type="date" name="Fecha_Firma"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 transition-all outline-none shadow-inner">
@@ -1400,7 +1540,7 @@
                 </div>
 
                 <!-- Sección 3: Finanzas -->
-                <div class="space-y-6">
+                <div class="space-y-3">
                     <div class="flex items-center space-x-3 text-inst-oro-600">
                         <span class="text-sm font-black uppercase tracking-wider">03. Aspectos
                             Financieros</span>
@@ -1409,34 +1549,46 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Monto
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Monto
                                 Total Sin IVA</label>
                             <input type="number" step="0.01" name="Monto_Total_Sin_IVA"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-black text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Monto
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Monto
                                 Total Con IVA</label>
                             <input type="number" step="0.01" name="Monto_Total_Con_IVA"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-black text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">%
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
                                 Amortización Anticipo</label>
-                            <input type="number" step="0.01" name="Porcentaje_Amortizacion_Anticipo"
+                            <input type="number" step="0.01" name="pct_Anticipo"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">%
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
                                 Penas Convencionales</label>
-                            <input type="number" step="0.01" name="Porcentaje_Penas_Convencionales"
+                            <input type="number" step="0.01" name="pct_Penas_Convencionales"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
+                                Retención Incumplimiento</label>
+                            <input type="number" step="0.01" name="pct_Retencion_Incumplimiento"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
+                                Otras Retenciones</label>
+                            <input type="number" step="0.01" name="Otras_Retenciones_Pct"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-inst-oro-100 focus:border-inst-oro-500 transition-all outline-none shadow-inner">
                         </div>
                     </div>
                 </div>
 
                 <!-- Sección 4: Fianzas -->
-                <div class="space-y-6">
+                <div class="space-y-3">
                     <div class="flex items-center space-x-3 text-amber-600">
                         <span class="text-sm font-black uppercase tracking-wider">04. Garantías y
                             Fianzas</span>
@@ -1445,34 +1597,61 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">No.
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">No.
                                 Fianza Cumplimiento</label>
                             <input type="text" name="No_Fianza_Cumplimiento"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-mono font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Monto
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Monto
                                 Fianza Cumplimiento</label>
                             <input type="number" step="0.01" name="Monto_Fianza_Cumplimiento"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">No.
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
+                                Fianza Cumplimiento</label>
+                            <input type="number" step="0.01" name="pct_Cumplimiento"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">No.
                                 Fianza Anticipo</label>
                             <input type="text" name="No_Fianza_Anticipo"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-mono font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Monto
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Monto
                                 Fianza Anticipo</label>
-                            <input type="number" step="0.01" name="Monto_Fianza_Anticipo"
+                            <input type="number" step="0.01" name="Monto_Anticipo"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div
+                            class="col-span-2 mt-4 text-xs font-black text-slate-400 uppercase tracking-widest border-t border-slate-100 pt-4">
+                            Garantía de Vicios Ocultos</div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">No.
+                                Fianza Vicios Ocultos</label>
+                            <input type="text" name="No_Fianza_Vicios_Ocultos"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-mono font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Monto
+                                Fianza Vicios Ocultos</label>
+                            <input type="number" step="0.01" name="Monto_Fianza_Vicios_Ocultos"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">%
+                                Fianza Vicios Ocultos</label>
+                            <input type="number" step="0.01" name="pct_Vicios_Ocultos"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-amber-100 focus:border-amber-500 transition-all outline-none shadow-inner">
                         </div>
                     </div>
                 </div>
 
                 <!-- Sección 5: Responsables -->
-                <div class="space-y-6 pb-4">
+                <div class="space-y-3 pb-2">
                     <div class="flex items-center space-x-3 text-slate-600">
                         <span class="text-sm font-black uppercase tracking-wider">05. Responsables</span>
                         <div class="h-px bg-slate-100 flex-1"></div>
@@ -1480,19 +1659,19 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Nombre
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Nombre
                                 del Residente</label>
                             <input type="text" name="Nombre_Residente_Dependencia"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-slate-100 focus:border-slate-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Nombre
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Nombre
                                 del Superintendente</label>
                             <input type="text" name="Nombre_Superintendente_Contratista"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-slate-100 focus:border-slate-500 transition-all outline-none shadow-inner">
                         </div>
                         <div>
-                            <label class="block text-sm font-black text-slate-400 uppercase mb-2 tracking-wider">Estatus
+                            <label class="block text-sm font-black text-slate-400 uppercase mb-1 tracking-wider">Estatus
                                 del Contrato</label>
                             <select name="Estado"
                                 class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-2 py-1 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-slate-100 focus:border-slate-500 transition-all outline-none shadow-inner appearance-none cursor-pointer">
@@ -1506,20 +1685,44 @@
                 </div>
             </form>
 
-            <!-- Footer Institucional -->
+            <!-- Footer Institucional Rediseñado -->
             <div
-                class="px-10 py-8 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-6">
+                class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div class="flex items-center space-x-3 opacity-60">
-                    <div class="w-2 h-2 bg-inst-oro rounded-full"></div>
-                    <p class="text-sm font-black text-slate-400 uppercase tracking-wider">Los cambios
-                        realizados se verán reflejados en todos los reportes oficiales.</p>
+                    <div class="w-2 h-2 bg-inst-oro rounded-full animate-pulse"></div>
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-relaxed max-w-sm">
+                        Los cambios realizados se verán reflejados en todos los reportes oficiales del sistema sict
+                        gestión.
+                    </p>
                 </div>
-                <div class="flex space-x-4 w-full sm:w-auto">
+
+                <div class="flex flex-wrap justify-center sm:justify-end items-center gap-4 w-full sm:w-auto">
+                    <!-- Botón de Importación con IA Directo -->
+                    <button type="button" onclick="importarContratoIAModal()"
+                        class="group flex items-center px-6 py-3 bg-white border-2 border-inst-oro/30 text-inst-vino text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-inst-crema/20 hover:border-inst-oro transition-all shadow-sm active:scale-95">
+                        <svg class="w-5 h-5 mr-2 text-inst-oro group-hover:scale-110 transition-transform" fill="none"
+                            stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Actualizar con IA
+                    </button>
+
+                    <div class="h-8 w-px bg-slate-200 hidden md:block mx-1"></div>
+
                     <button type="button" onclick="cerrarModalEditarDatosGenerales()"
-                        class="flex-1 sm:flex-none px-8 py-2 bg-white border border-slate-200 text-slate-500 text-sm font-black uppercase tracking-wider rounded-2xl hover:bg-slate-50 transition-all">Cancelar</button>
+                        class="px-6 py-3 bg-white border border-slate-200 text-slate-400 text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-slate-50 hover:text-slate-600 transition-all active:scale-95">
+                        Cancelar
+                    </button>
+
                     <button type="button" onclick="guardarEdicionDatosGenerales()"
-                        class="flex-1 sm:flex-none px-10 py-2 bg-inst-vino text-white text-sm font-black uppercase tracking-wider rounded-2xl hover:bg-inst-negro transition-all shadow-xl shadow-inst-vino/20 active:scale-95">Confirmar
-                        y Guardar</button>
+                        class="px-10 py-3 bg-inst-vino text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-inst-negro transition-all shadow-xl shadow-inst-vino/20 active:scale-95 flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7">
+                            </path>
+                        </svg>
+                        Confirmar y Guardar
+                    </button>
                 </div>
             </div>
         </div>

@@ -65,9 +65,16 @@
     });
 
     // Utilidades Globales
-    const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(v || 0);
-    const formatoPct = (v) => (v * 100).toFixed(2) + '%';
-    const formatoPct4 = (v) => (v * 100).toFixed(4) + '%';
+    const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
+    const formatoPct = (v) => {
+        let n = parseFloat(v) || 0;
+        // Smart Formatting: Si es > 1, ya es entero (20 -> 20%). Si es <= 1, es fracción (0.2 -> 20%).
+        return (n > 1 || n < -1 ? n : n * 100).toFixed(2) + '%';
+    };
+    const formatoPct4 = (v) => {
+        let n = parseFloat(v) || 0;
+        return (n > 1 || n < -1 ? n : n * 100).toFixed(4) + '%';
+    };
 
     /**
      * Convierte un número a su representación en letras (Moneda Mexicana).
@@ -297,7 +304,7 @@
     function renderizarDashboard(data) {
         if (!data) return;
 
-        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+        // const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
         const kpis = data.kpis || {};
 
         // 1. Renderizar KPIs Financieros
@@ -317,31 +324,54 @@
         const lblPct = document.getElementById('lbl-porcentaje-pagado');
         if (lblPct) lblPct.textContent = pctPagado.toFixed(2) + '% del presupuesto';
 
-        // 2. Renderizar Proyecciones Mensuales (Mini Chart CSS)
+        // 1.5 Renderizar Alertas (NUEVO)
+        renderizarAlertas(data.alertas);
+
+        // 2. Renderizar Proyecciones Mensuales (Mini Chart CSS - 5 Meses Deslizables)
         const containerProy = document.getElementById('chart-proyecciones-pagos');
         if (containerProy && data.proyeccionesMensuales) {
-            const meses = Object.keys(data.proyeccionesMensuales).sort();
-            if (meses.length > 0) {
-                const maxMonto = Math.max(...Object.values(data.proyeccionesMensuales));
-                containerProy.innerHTML = meses.map(mes => {
-                    const monto = data.proyeccionesMensuales[mes];
-                    const altura = maxMonto > 0 ? (monto / maxMonto * 100) : 0;
-                    const labelMes = mes.split('-')[1]; // Solo el mes
-                    return `
-                        <div class="flex flex-col items-center group/bar relative h-full justify-end">
-                            <div class="absolute -top-10 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap z-10 shadow-xl">
-                                ${formatoMoneda(monto)}
-                            </div>
-                            <div class="w-full bg-inst-vino/10 rounded-t-lg group-hover/bar:bg-inst-vino/30 transition-all cursor-help relative" style="height: ${altura}%">
-                                <div class="absolute bottom-0 left-0 w-full bg-inst-vino rounded-t-lg" style="height: ${Math.min(altura, 20)}%"></div>
-                            </div>
-                            <span class="text-[8px] font-black text-slate-400 mt-2 uppercase">${MESES_ESP[labelMes] || labelMes}</span>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                containerProy.innerHTML = `<div class="col-span-full text-center text-slate-300 italic text-xs py-10">Sin datos de programa cargados.</div>`;
+            const hoy = new Date();
+            const yearActual = hoy.getFullYear();
+            const mesActual = hoy.getMonth() + 1; // 1-12
+
+            // Generar ventana de 5 meses: [M-2, M-1, M, M+1, M+2]
+            const ventanaMeses = [];
+            for (let i = -2; i <= 2; i++) {
+                const d = new Date(yearActual, mesActual - 1 + i, 1);
+                const y = d.getFullYear();
+                const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                ventanaMeses.push(`${y}-${m}`);
             }
+
+            const montos = ventanaMeses.map(key => data.proyeccionesMensuales[key] || 0);
+            const maxMonto = Math.max(...montos, 1); // Evitar división por cero
+
+            containerProy.innerHTML = ventanaMeses.map((key, index) => {
+                const monto = montos[index];
+                const altura = (monto / maxMonto * 80); // Max 80% para dejar espacio al label
+                const [y, m] = key.split('-');
+                const esHoy = (index === 2); // El centro siempre es el mes actual solicitado
+
+                return `
+                    <div class="flex-1 flex flex-col items-center group/bar relative h-full justify-end">
+                        <!-- Label de Importe (Directo) -->
+                        <div class="mb-2 text-[9px] font-black ${esHoy ? 'text-inst-vino' : 'text-slate-400'} font-mono text-center leading-none">
+                            ${monto > 0 ? formatoMoneda(monto).replace('$', '$ ') : '--'}
+                        </div>
+                        
+                        <!-- Barra -->
+                        <div class="w-full max-w-[60px] ${esHoy ? 'bg-inst-vino' : 'bg-slate-200'} rounded-t-xl transition-all duration-700 relative overflow-hidden shadow-sm group-hover/bar:shadow-lg" 
+                             style="height: ${altura}%">
+                            ${esHoy ? '<div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>' : ''}
+                        </div>
+
+                        <!-- Label de Mes -->
+                        <span class="text-[10px] font-black ${esHoy ? 'text-inst-vino underline underline-offset-4 decoration-2' : 'text-slate-400'} mt-3 uppercase tracking-tighter">
+                            ${MESES_ESP[m] || m} ${y.slice(-2)}
+                        </span>
+                    </div>
+                `;
+            }).join('');
         }
 
         // 3. Renderizar Corte de Ejercicios
@@ -354,14 +384,19 @@
                     const monto = data.corteEjercicios[año];
                     totalProg += monto;
                     return `
-                        <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-inst-oro/30 transition-all group/item">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-[10px] font-black text-slate-500 group-hover/item:border-inst-oro group-hover/item:text-inst-vino transition-colors">
+                        <div class="flex items-center justify-between p-6 bg-white border border-inst-oro/20 rounded-[2rem] hover:border-inst-oro/60 transition-all group/item shadow-sm hover:shadow-md">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 bg-inst-crema border border-inst-oro/30 rounded-2xl flex items-center justify-center text-xs font-black text-inst-vino group-hover/item:bg-inst-vino group-hover/item:text-inst-oro transition-all duration-300">
                                     ${año}
                                 </div>
-                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ejercicio Fiscal</span>
+                                <div>
+                                    <span class="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none mb-1">Ejercicio Fiscal</span>
+                                    <span class="block text-[9px] font-bold text-inst-vino/40 uppercase tracking-widest leading-none italic">Consolidado Programado</span>
+                                </div>
                             </div>
-                            <span class="text-xs font-black text-slate-700 italic">${formatoMoneda(monto)}</span>
+                            <div class="text-right">
+                                <span class="text-lg font-black text-slate-800 tracking-tighter italic">${formatoMoneda(monto)}</span>
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -411,6 +446,84 @@
                 `;
             }).join('');
         }
+    }
+
+    /**
+     * Renderiza dinámicamente las alertas de hitos en el Dashboard.
+     * @param {Array} alertas - Lista de objetos de alerta.
+     */
+    function renderizarAlertas(alertas) {
+        const contenedor = document.getElementById('contenedor-alertas');
+        const lista = document.getElementById('lista-alertas');
+        if (!contenedor || !lista) return;
+
+        if (!alertas || alertas.length === 0) {
+            contenedor.classList.add('hidden');
+            return;
+        }
+
+        contenedor.classList.remove('hidden');
+        lista.innerHTML = alertas.map(a => {
+            let colorClase = 'border-slate-100 bg-white';
+            let iconClase = 'bg-slate-100 text-slate-500';
+            let labelClase = 'bg-slate-50 text-slate-400';
+            let badgeDias = 'text-slate-500 bg-slate-100';
+
+            if (a.urgencia === 'ALTA') {
+                colorClase = 'border-rose-100 bg-rose-50/30';
+                iconClase = 'bg-rose-600 text-white';
+                labelClase = 'bg-rose-100 text-rose-600';
+                badgeDias = 'text-rose-700 bg-rose-100';
+            } else if (a.urgencia === 'MEDIA') {
+                colorClase = 'border-amber-100 bg-amber-50/30';
+                iconClase = 'bg-amber-500 text-white';
+                labelClase = 'bg-amber-100 text-amber-700';
+                badgeDias = 'text-amber-700 bg-amber-100';
+            }
+
+            const diasMsg = a.diasRestantes < 0 
+                ? `Vencido hace ${Math.abs(a.diasRestantes)} días` 
+                : (a.diasRestantes === 0 ? '¡Vencimiento Hoy!' : `Restan ${a.diasRestantes} días`);
+
+            // Iconos según el tipo de hito
+            let svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+            if (a.tipo === 'VERIFICACION') svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+            if (a.tipo === 'ENTREGA') svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>';
+            if (a.tipo === 'FINIQUITO') svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>';
+            
+            // Iconos para Estimaciones (NUEVO)
+            if (a.tipo === 'CORTE') svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>'; // Calendario
+            if (a.tipo === 'RECEPCION') svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>'; // Upload
+            if (a.tipo.startsWith('PAGO')) svgIcon = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'; // Moneda
+
+            // Redirección diferencial: Si es Global redirecciona al catálogo o dashboard, si es Contrato al detalle.
+            const onclick = a.idContrato === 'GLOBAL' ? "cargarVista('contratos.vw')" : `cargarVista('contrato_detalle.vw', { id: '${a.idContrato}' })`;
+
+            return `
+                <div class="p-6 rounded-[2.5rem] border ${colorClase} shadow-sm hover:shadow-xl transition-all group/card cursor-pointer" onclick="${onclick}">
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex justify-between items-start">
+                            <div class="w-10 h-10 rounded-2xl ${iconClase} flex items-center justify-center shadow-md">
+                                ${svgIcon}
+                            </div>
+                            <span class="px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${badgeDias} shadow-sm">
+                                ${diasMsg}
+                            </span>
+                        </div>
+                        
+                        <div>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 underline decoration-inst-oro/30 decoration-2 underline-offset-4">${a.numero}</p>
+                            <h5 class="text-sm font-black text-slate-800 uppercase tracking-tight italic group-hover/card:text-rose-600 transition-colors">${a.titulo}</h5>
+                        </div>
+                        
+                        <div class="flex items-center space-x-3 mt-2">
+                            <div class="flex-1 h-px bg-slate-100 group-hover/card:bg-rose-100 transition-colors"></div>
+                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter whitespace-nowrap">Fecha: ${new Date(a.fecha).toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase()}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     // --- Controladores: Listado de Contratos --- //
@@ -501,8 +614,8 @@
     }
 
     // --- Controladores: Detalle de un Contrato --- //
-
-    function inicializarContratoDetalle(params) {
+    
+    window.inicializarContratoDetalle = function(params) {
         if (!params || !params.id) {
             manejarError({ error: 'ID de contrato no proporcionado para la vista de detalle.', functionName: 'inicializarContratoDetalle' });
             return;
@@ -582,8 +695,6 @@
             return;
         }
 
-        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(v || 0);
-        const formatoPct = (v) => (v * 100).toFixed(2) + '%';
 
         // 1. Mostrar Chips de Periodos Premium
         const chipsContainer = document.getElementById('lista-periodos-container');
@@ -591,10 +702,16 @@
         if (chipsContainer && chipsList) {
             chipsContainer.classList.remove('hidden');
             chipsList.innerHTML = data.meses.map(m => `
-                <div class="bg-white border border-slate-100 p-2 rounded-2xl shadow-sm hover:shadow-md transition-all group border-l-4 border-l-inst-oro">
-                    <div class="text-sm font-black text-slate-400 uppercase tracking-wider mb-1 group-hover:text-inst-vino transition-colors">Periodo ${m.numero || '--'}</div>
-                    <div class="text-sm font-black text-inst-vino uppercase tracking-tighter">${m.label.replace('January', 'Enero').replace('February', 'Febrero').replace('March', 'Marzo').replace('April', 'Abril').replace('May', 'Mayo').replace('June', 'Junio').replace('July', 'Julio').replace('August', 'Agosto').replace('September', 'Septiembre').replace('October', 'Octubre').replace('November', 'Noviembre').replace('December', 'Diciembre')}</div>
-                    <div class="text-sm text-slate-400 mt-1 font-bold">${m.start} - ${m.end}</div>
+                <div class="flex-1 min-w-[180px] bg-white border border-slate-100 p-4 rounded-3xl shadow-sm hover:shadow-xl hover:translate-y-[-2px] transition-all group border-l-4 border-l-inst-oro relative overflow-hidden">
+                    <div class="absolute top-0 right-0 -mt-2 -mr-2 w-12 h-12 bg-inst-crema/10 rounded-full blur-xl group-hover:bg-inst-crema/30 transition-colors"></div>
+                    <div class="relative z-10">
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 group-hover:text-inst-vino transition-colors">Periodo ${m.numero || '--'}</div>
+                        <div class="text-sm font-black text-inst-vino uppercase tracking-tighter leading-tight mb-2">${(m.label || '').toUpperCase()}</div>
+                        <div class="flex items-center text-[11px] text-slate-400 font-bold bg-slate-50 px-2 py-1 rounded-lg w-fit">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 00-2 2z"></path></svg>
+                            ${m.start} - ${m.end}
+                        </div>
+                    </div>
                 </div>
             `).join('');
         }
@@ -607,6 +724,7 @@
         }
 
         // 2. Cálculos de Totales
+        const subtotalContratoGlobal = parseFloat(data.subtotalContrato) || 0;
         const totalesVerticales = new Array(data.meses.length).fill(0);
         let granTotal = 0;
         data.conceptosMatriz.forEach(c => {
@@ -619,19 +737,19 @@
 
         // 2. Cabecera Profesional Institutional (Separando Clave y Descripción)
         let headHtml = `
-            <tr class="bg-rehilete-vino text-white border-b-4 border-inst-oro transition-all">
-                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-left sticky left-0 z-40 bg-inst-vino text-base uppercase font-black tracking-tight">Clave</th>
-                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-left sticky left-[120px] z-40 bg-inst-vino min-w-[400px] text-base uppercase font-black tracking-tight">Descripción del Concepto</th>
-                <th rowspan="2" class="px-6 py-6 border-r border-white/10 text-right text-base bg-inst-vino sticky left-[520px] z-40 font-black uppercase w-56">Importe Total</th>
-                <th colspan="${data.meses.length}" class="px-6 py-2 border-b border-white/10 text-center text-sm uppercase font-black tracking-wider opacity-90">Calendario de Ejecución Programada</th>
+            <tr class="bg-rehilete-vino text-white border-b-2 border-inst-oro transition-all">
+                <th rowspan="2" class="px-4 py-2 border-r border-white/10 text-left sticky left-0 z-40 bg-inst-vino text-sm uppercase font-black tracking-tight">Clave</th>
+                <th rowspan="2" class="px-4 py-2 border-r border-white/10 text-left sticky left-[120px] z-40 bg-inst-vino min-w-[400px] text-sm uppercase font-black tracking-tight">Descripción del Concepto</th>
+                <th rowspan="2" class="px-4 py-2 border-r border-white/10 text-right text-sm bg-inst-vino sticky left-[520px] z-40 font-black uppercase w-56">Importe Total</th>
+                <th colspan="${data.meses.length}" class="px-4 py-1 border-b border-white/10 text-center text-[10px] uppercase font-black tracking-wider opacity-90">Calendario de Ejecución Programada</th>
             </tr>
             <tr class="bg-inst-vino/95 text-white/60 border-b border-white/5">
         `;
         data.meses.forEach(m => {
             headHtml += `
-            <th class="px-2 py-2 border-r border-white/5 text-center min-w-[200px]">
-                <div class="text-base font-black text-white uppercase tracking-tight">${m.label}</div>
-                <div class="text-sm text-white/70 font-black mt-0.5 tracking-wider">${m.start} - ${m.end}</div>
+            <th class="px-2 py-1.5 border-r border-white/5 text-center min-w-[180px]">
+                <div class="text-[13px] font-black text-white uppercase tracking-tight">${(m.label || '').toUpperCase()}</div>
+                <div class="text-[10px] text-white/70 font-black tracking-wider">${m.start} - ${m.end}</div>
             </th>`;
         });
         headHtml += '</tr>';
@@ -648,30 +766,31 @@
 
             bodyHtml += `
                 <tr class="hover:bg-inst-crema/10 transition-all duration-200 border-b border-slate-50 group" data-id="${c.id}">
-                <td class="px-6 py-6 border-r border-slate-50 bg-white sticky left-0 z-20 shadow-sm group-hover:bg-slate-50 text-base font-black text-inst-vino uppercase tracking-tight">${c.clave || '-'}</td>
-                <td class="px-6 py-6 border-r border-slate-50 bg-white sticky left-[120px] z-20 shadow-sm group-hover:bg-slate-50 text-base text-slate-600 font-medium leading-relaxed">${c.descripcion || '-'}</td>
-                <td class="px-6 py-6 border-r border-slate-100 text-right bg-slate-50/30 font-black text-inst-vino font-sans sticky left-[520px] z-20 group-hover:bg-slate-100 col-total-fila">
-                    <div class="text-base tracking-tighter">${formatoMoneda(totalFila)}</div>
-                    <div class="text-sm uppercase tracking-wider mt-1 indicator-remanente ${totalFila > (c.totalConcepto + 0.1) ? 'text-rose-600' : 'text-slate-400'}">
+                <td class="px-4 py-2 border-r border-slate-50 bg-white sticky left-0 z-20 shadow-sm group-hover:bg-slate-50 text-sm font-bold text-inst-vino tracking-tight">${c.clave || '-'}</td>
+                <td class="px-4 py-2 border-r border-slate-50 bg-white sticky left-[120px] z-20 shadow-sm group-hover:bg-slate-50 text-xs text-slate-600 font-medium leading-tight">${c.descripcion || '-'}</td>
+                <td class="px-4 py-2 border-r border-slate-100 text-right bg-slate-50/30 font-black text-inst-vino font-sans sticky left-[520px] z-20 group-hover:bg-slate-100 col-total-fila">
+                    <div class="text-sm tracking-tight">${formatoMoneda(totalFila)}</div>
+                    <div class="text-[10px] uppercase tracking-wider indicator-remanente ${totalFila > (c.totalConcepto + 0.1) ? 'text-rose-600' : 'text-slate-400'}">
                         ${totalFila < (c.totalConcepto - 0.1) ? 'Falta: ' + formatoMoneda(c.totalConcepto - totalFila) : (totalFila > (c.totalConcepto + 0.1) ? 'Exceso!' : 'Completo')}
                     </div>
                 </td>
             `;
             c.montos.forEach((m, idx) => {
                 const montoVal = parseFloat(m) || 0;
-                const pctRelativo = granTotal > 0 ? (montoVal / granTotal) : 0;
-                const style = montoVal > 0 ? 'text-slate-800' : 'text-slate-300';
+                const pctRelativo = subtotalContratoGlobal > 0 ? (montoVal / subtotalContratoGlobal) : 0;
+                const colorMonto = montoVal > 0 ? 'text-black' : 'text-slate-300';
+                const colorPct = montoVal > 0 ? 'text-inst-oro' : 'text-slate-300';
                 const mes = data.meses[idx];
 
                 bodyHtml += `
-                    <td class="px-2 py-8 text-right border-r border-slate-50 relative group/cell">
+                    <td class="px-2 py-2 text-right border-r border-slate-50 relative group/cell">
                         <div contenteditable="true" 
                              oninput="recalcularFilaPrograma(this, 'monto')"
                              onfocus="this.dataset.original = this.innerText"
                              onblur="autoGuardarPeriodo(this)"
                              data-tipo="monto"
                              data-id-periodo="${mes.id}"
-                             class="text-base font-black font-sans outline-none focus:ring-4 focus:ring-inst-oro/20 rounded-lg px-1 py-1 transition-all ${style}">${formatoMoneda(montoVal)}</div>
+                             class="text-sm font-black font-sans outline-none focus:ring-2 focus:ring-inst-oro/20 rounded-md px-1 py-0.5 transition-all ${colorMonto}">${formatoMoneda(montoVal)}</div>
                         
                         <div contenteditable="true"
                              oninput="recalcularFilaPrograma(this, 'pct')"
@@ -679,7 +798,7 @@
                              onblur="autoGuardarPeriodo(this)"
                              data-tipo="pct"
                              data-id-periodo="${mes.id}"
-                             class="text-sm text-inst-oro font-black mt-1 outline-none focus:ring-4 focus:ring-inst-oro/10 rounded px-1 inline-block transition-all tracking-tighter italic">${formatoPct4(pctRelativo)}</div>
+                             class="text-[11px] font-black mt-0.5 outline-none focus:ring-2 focus:ring-inst-oro/10 rounded px-1 inline-block transition-all tracking-tight italic ${colorPct}">${formatoPct4(pctRelativo)}</div>
                     </td>`;
             });
             bodyHtml += `</tr>`;
@@ -691,35 +810,35 @@
 
         // Fila 1: Importes
         let f1 = `<tr class="bg-slate-50/50 border-t-2 border-slate-200">
-            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-base text-slate-500 uppercase font-black tracking-tight">Total Mensual (Importe)</td>
-            <td class="px-6 py-8 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-base border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
-        totalesVerticales.forEach(tv => f1 += `<td class="px-2 py-8 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-base">${formatoMoneda(tv)}</td>`);
+            <td colspan="2" class="px-4 py-3 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-xs text-slate-500 uppercase font-black tracking-tight">Total Mensual (Importe)</td>
+            <td class="px-4 py-3 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-sm border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
+        totalesVerticales.forEach(tv => f1 += `<td class="px-2 py-3 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(tv)}</td>`);
         f1 += `</tr>`;
 
         // Fila 2: % Mensual
         let f2 = `<tr class="bg-white border-b border-slate-50">
-            <td colspan="2" class="px-6 py-6 sticky left-0 z-20 bg-white border-r border-slate-100 text-base text-slate-400 uppercase font-bold italic tracking-tight">Incidencia Mensual (%)</td>
-            <td class="px-6 py-6 text-right bg-white sticky left-[520px] z-30 font-black text-slate-300 text-sm tracking-wider border-r border-slate-100">--</td>`;
-        totalesVerticales.forEach(tv => f2 += `<td class="px-2 py-6 text-right text-inst-oro font-black text-base border-r border-slate-50 italic tracking-tighter">${formatoPct4(granTotal > 0 ? tv / granTotal : 0)}</td>`);
+            <td colspan="2" class="px-4 py-2 sticky left-0 z-20 bg-white border-r border-slate-100 text-xs text-slate-400 uppercase font-bold italic tracking-tight">Incidencia Mensual (%)</td>
+            <td class="px-4 py-2 text-right bg-white sticky left-[520px] z-30 font-black text-slate-300 text-[10px] tracking-wider border-r border-slate-100">--</td>`;
+        totalesVerticales.forEach(tv => f2 += `<td class="px-2 py-2 text-right text-inst-oro font-black text-sm border-r border-slate-50 italic tracking-tighter">${formatoPct4(subtotalContratoGlobal > 0 ? tv / subtotalContratoGlobal : 0)}</td>`);
         f2 += `</tr>`;
 
         // Fila 3: Acumulado Importe
         let f3 = `<tr class="bg-slate-50/50 border-t border-slate-100">
-            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-base text-slate-500 uppercase font-black tracking-tight">Monto Acumulado Programado</td>
-            <td class="px-6 py-8 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-base border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
+            <td colspan="2" class="px-4 py-3 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 text-xs text-slate-500 uppercase font-black tracking-tight">Monto Acumulado Programado</td>
+            <td class="px-4 py-3 text-right bg-slate-100 sticky left-[520px] z-30 font-black text-inst-vino text-sm border-r border-slate-200 shadow-xl">${formatoMoneda(granTotal)}</td>`;
         totalesVerticales.forEach(tv => {
             acumuladoImporte += tv;
-            f3 += `<td class="px-2 py-8 text-right text-slate-700 font-black border-r border-slate-100 font-sans text-base">${formatoMoneda(acumuladoImporte)}</td>`;
+            f3 += `<td class="px-2 py-3 text-right text-slate-800 font-black border-r border-slate-100 font-sans text-sm">${formatoMoneda(acumuladoImporte)}</td>`;
         });
         f3 += `</tr>`;
 
         // Fila 4: Avance % (Highlight Institucional)
         let f4 = `<tr class="bg-rehilete-vino text-white font-black overflow-hidden relative">
-            <td colspan="2" class="px-6 py-8 sticky left-0 z-20 bg-inst-vino border-r border-white/10 text-base uppercase tracking-tight italic text-inst-oro">Avance Programado (%)</td>
-            <td class="px-6 py-8 text-right bg-inst-vino sticky left-[520px] z-30 font-black text-white text-lg border-r border-white/10 shadow-2xl">100.00%</td>`;
+            <td colspan="2" class="px-4 py-4 sticky left-0 z-20 bg-inst-vino border-r border-white/10 text-sm uppercase tracking-tight italic text-inst-oro">Avance Programado (%)</td>
+            <td class="px-4 py-4 text-right bg-inst-vino sticky left-[520px] z-30 font-black text-white text-base border-r border-white/10 shadow-2xl">100.0000%</td>`;
         totalesVerticales.forEach(tv => {
             tempAcumTotal += tv;
-            f4 += `<td class="px-1 py-8 text-right border-r border-white/5 text-base font-sans tracking-tight">${formatoPct4(granTotal > 0 ? tempAcumTotal / granTotal : 0)}</td>`;
+            f4 += `<td class="px-1 py-4 text-right border-r border-white/5 text-sm font-sans tracking-tight">${formatoPct4(subtotalContratoGlobal > 0 ? tempAcumTotal / subtotalContratoGlobal : 0)}</td>`;
         });
         f4 += `</tr>`;
 
@@ -730,23 +849,25 @@
     function renderizarContratoDetalle(data) {
         if (!data) return;
 
-        // Formateadores locales
-        const formatoMoneda = (valor) => {
-            let valNum = parseFloat(valor);
-            return isNaN(valNum) ? '$0.00' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(valNum);
-        };
+        // Formateadores locales con protección
         const formatoFecha = (valorStr) => {
             if (!valorStr) return '--/--/----';
             try {
                 const date = new Date(valorStr);
+                if (isNaN(date.getTime())) return valorStr;
                 return new Intl.DateTimeFormat('es-MX', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
             } catch (e) { return valorStr; }
         };
-        const formatoPct = (v) => v ? parseFloat(v).toFixed(2) + '%' : '0.00%';
+        const formatoPct = (v) => {
+            let n = parseFloat(v) || 0;
+            return (n > 1 || n < -1 ? n : n * 100).toFixed(2) + '%';
+        };
 
         // --- 1. Top Header Info ---
-        document.getElementById('titulo-numero-contrato').textContent = data.Numero_Contrato || 'Contrato sin número';
-        document.getElementById('lbl-objeto-contrato').textContent = data.Objeto_Contrato || 'Sin descripción';
+        const setT = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+        setT('titulo-numero-contrato', data.Numero_Contrato || 'Contrato sin número');
+        setT('lbl-objeto-contrato', data.Objeto_Contrato || 'Sin descripción');
 
         const badgeUbicacion = document.getElementById('badge-ubicacion-header');
         if (badgeUbicacion) {
@@ -754,20 +875,12 @@
         }
 
         // --- 2. Hero Section (Dashboard) ---
-        // Financiero
         const lblMontoHero = document.getElementById('resumen-total') || document.getElementById('lbl-monto-con-iva');
         if (lblMontoHero) lblMontoHero.textContent = formatoMoneda(data.Monto_Total_Con_IVA);
 
-        // Tiempo
-        const lblPlazoHero = document.getElementById('lbl-plazo-dias');
-        if (lblPlazoHero) lblPlazoHero.textContent = (data.Plazo_Ejecucion_Dias || '0');
-
-        const lblFechaFin = document.getElementById('lbl-fecha-fin');
-        if (lblFechaFin) lblFechaFin.textContent = formatoFecha(data.Fecha_Fin_Obra);
-
-        // Contratista
-        const lblContratista = document.getElementById('lbl-contratista');
-        if (lblContratista) lblContratista.textContent = data.Nombre_Contratista || data.ID_Contratista || 'No especificado';
+        setT('lbl-plazo-dias', data.Plazo_Ejecucion_Dias || '0');
+        setT('lbl-fecha-fin', formatoFecha(data.Fecha_Fin_Obra));
+        setT('lbl-contratista', data.Nombre_Contratista || data.ID_Contratista || 'No especificado');
 
         // --- 3. Cálculos de Progreso ---
         // Progreso de Tiempo (Días transcurridos vs Total)
@@ -790,66 +903,107 @@
         }
 
         // --- 4. Cards Detalle (Management Grid) ---
-        document.getElementById('lbl-area-responsable').textContent = data.Area_Responsable || 'No especificada';
-        document.getElementById('lbl-no-contrato-fisico').textContent = data.Numero_Contrato || '-';
-        document.getElementById('lbl-no-concurso').textContent = data.No_Concurso || '-';
-        document.getElementById('lbl-fecha-adjudicacion').textContent = formatoFecha(data.Fecha_Adjudicacion);
-        document.getElementById('lbl-fecha-firma').textContent = formatoFecha(data.Fecha_Firma);
+        setT('lbl-area-responsable', data.Area_Responsable || 'No especificada');
+        setT('lbl-no-contrato-fisico', data.Numero_Contrato || '-');
+        setT('lbl-no-concurso', data.No_Concurso || '-');
+        setT('lbl-fecha-adjudicacion', formatoFecha(data.Fecha_Adjudicacion));
+        setT('lbl-fecha-firma', formatoFecha(data.Fecha_Firma));
 
-        document.getElementById('lbl-amortizacion-anticipo').textContent = formatoPct(data.Porcentaje_Amortizacion_Anticipo);
-        document.getElementById('lbl-fianza-cumplimiento').textContent = data.No_Fianza_Cumplimiento || 'PENDIENTE';
-        document.getElementById('lbl-fianza-anticipo').textContent = data.No_Fianza_Anticipo || 'N/A';
+        // --- RENDERIZADO DE FIANZAS CON ESTATUS ---
+        const renderFianzaLabel = (baseId, valor, tipo, pct, afianzadora, estatusRaw) => {
+            const el = document.getElementById(`lbl-${baseId}`);
+            const pctEl = document.getElementById(`lbl-pct-${baseId}`);
+            const afiEl = document.getElementById(`lbl-afianzadora-${baseId}`);
+            if (!el) return;
 
-        document.getElementById('lbl-penas-convencionales').textContent = formatoPct(data.Porcentaje_Penas_Convencionales);
-        document.getElementById('lbl-retencion-vigilancia').textContent = formatoPct(data.Retencion_Vigilancia_Pct);
-        document.getElementById('lbl-otras-retenciones').textContent = formatoPct(data.Otras_Retenciones_Pct);
+            const estatus = (estatusRaw || '').toUpperCase();
+            let colorClass = 'text-slate-400';
+            let labelText = valor || 'PENDIENTE';
 
-        document.getElementById('lbl-residente').textContent = data.Nombre_Residente_Dependencia || '-';
-        document.getElementById('lbl-superintendente').textContent = data.Nombre_Superintendente_Contratista || '-';
+            if (estatus === 'BORRADOR' || estatus === 'BORRADOR_VALIDADO') {
+                colorClass = 'text-amber-600 font-black italic';
+                labelText = valor || `${tipo} (BORRADOR)`;
+            } else if (estatus === 'VALIDA') {
+                colorClass = 'text-emerald-600 font-black';
+                labelText = `✓ ${valor || 'VALIDADA'}`;
+            } else if (estatus === 'RECHAZADA') {
+                colorClass = 'text-rose-600 font-black line-through';
+                labelText = `✕ ${valor || 'RECHAZADA'}`;
+            }
+
+            el.textContent = labelText;
+            el.className = `text-xs transition-colors ${colorClass} truncate max-w-[150px]`;
+            el.title = `Estatus: ${estatus || 'Sin analizar'}`;
+
+            if (pctEl) {
+                pctEl.textContent = formatoPct(pct);
+            }
+
+            if (afiEl) {
+                afiEl.textContent = afianzadora || '';
+            }
+        };
+
+        renderFianzaLabel('fianza-cumplimiento', data.No_Fianza_Cumplimiento, 'CUMPLIMIENTO', data.pct_Cumplimiento, data.Nombre_Afianzadora_Cumplimiento, data.Estatus_Fianza_Cumplimiento);
+        renderFianzaLabel('fianza-anticipo', data.No_Fianza_Anticipo, 'ANTICIPO', data.pct_Anticipo, data.Nombre_Afianzadora_Anticipo, data.Estatus_Fianza_Anticipo);
+        renderFianzaLabel('fianza-vicios-ocultos', data.No_Fianza_Vicios_Ocultos, 'VICIOS OCULTOS', data.pct_Vicios_Ocultos, data.Nombre_Afianzadora_Vicios_Ocultos, data.Estatus_Fianza_Vicios_Ocultos);
+
+        setT('lbl-amortizacion-anticipo', formatoPct(data.pct_Anticipo || data.Porcentaje_Amortizacion_Anticipo));
+        setT('lbl-penas-convencionales', formatoPct(data.pct_Penas_Convencionales));
+        setT('lbl-retencion-vigilancia', formatoPct(data.Pct_ISN || 0.005)); // 0.5% Estándar
+        setT('lbl-retencion-incumplimiento', formatoPct(data.pct_Retencion_Incumplimiento));
+        setT('lbl-otras-retenciones', formatoPct(data.Otras_Retenciones_Pct));
+
+        setT('lbl-residente', data.Nombre_Residente_Dependencia || '-');
+        setT('lbl-superintendente', data.Nombre_Superintendente_Contratista || '-');
 
         // --- 5. Estatus Visual (Badge Header) ---
         const badgeHeader = document.getElementById('badge-estado-contrato-header');
-        let estadoStr = (data.Estado || 'N/A').toLowerCase();
-
         if (badgeHeader) {
+            let estadoStr = (data.Estado || 'N/A').toLowerCase();
             badgeHeader.textContent = estadoStr.toUpperCase();
             badgeHeader.className = "px-2 py-1 rounded-full text-sm font-black uppercase tracking-wider shadow-sm transition-all duration-300";
 
-            if (estadoStr === 'activo') {
-                badgeHeader.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
-            } else if (estadoStr === 'finalizado') {
-                badgeHeader.classList.add('bg-blue-50', 'text-blue-700', 'border', 'border-blue-200');
-            } else if (estadoStr === 'rescindido') {
-                badgeHeader.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
-            } else if (estadoStr === 'suspendido') {
-                badgeHeader.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
-            } else {
-                badgeHeader.classList.add('bg-slate-50', 'text-slate-500', 'border', 'border-slate-200');
-            }
+            if (estadoStr === 'activo') badgeHeader.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
+            else if (estadoStr === 'finalizado') badgeHeader.classList.add('bg-blue-50', 'text-blue-700', 'border', 'border-blue-200');
+            else if (estadoStr === 'rescindido') badgeHeader.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
+            else if (estadoStr === 'suspendido') badgeHeader.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
+            else badgeHeader.classList.add('bg-slate-50', 'text-slate-500', 'border', 'border-slate-200');
         }
 
         // Almacenar data para edición posterior
         window.contratoActual = data;
+        console.log("Contrato cargado y listo para edición:", data.ID_Contrato);
     }
 
     /**
      * Abre el modal de edición y lo carga con la data actual almacenada en window.contratoActual.
      */
     window.abrirModalEditarDatosGenerales = function () {
+        console.log("Intentando abrir modal de edición...");
         const data = window.contratoActual;
         if (!data) {
-            console.error("No hay datos de contrato cargados para editar.");
+            console.error("No hay datos de contrato cargados.");
+            Swal.fire({
+                icon: 'error',
+                title: 'Error al abrir edición',
+                text: 'No se encontraron datos del contrato cargados. Por favor, refresca la página.',
+                confirmButtonColor: '#631131'
+            });
             return;
         }
 
         const modal = document.getElementById('modal-editar-datos-generales');
         const form = document.getElementById('form-editar-datos-generales');
-        if (!modal || !form) return;
+
+        if (!modal || !form) {
+            console.error("No se encontró el modal o el formulario en el DOM.");
+            return;
+        }
 
         // Limpiar form y setear valores
         form.reset();
 
-        // Función helper para formatear fechas para input type="date"
         const isoDate = (str) => {
             if (!str) return '';
             try {
@@ -859,7 +1013,6 @@
             } catch (e) { return ''; }
         };
 
-        // Poblar campos usando el atributo name de los inputs
         const inputs = form.querySelectorAll('input, textarea, select');
         inputs.forEach(input => {
             const field = input.getAttribute('name');
@@ -874,6 +1027,7 @@
 
         modal.classList.remove('hidden');
         document.body.classList.add('overflow-hidden');
+        console.log("Modal de edición abierto correctamente.");
     };
 
     window.cerrarModalEditarDatosGenerales = function () {
@@ -1068,6 +1222,119 @@
             .actualizarDatosContrato(idContrato, nuevosDatos);
     };
 
+    /**
+     * Abre un diálogo de carga de archivo dentro del modal para procesar con IA.
+     * Llena el formulario actual con los datos extraídos.
+     */
+    /**
+     * Abre el modal de importación IA en modo "UPDATE" para el formulario de edición.
+     * Al detectar el modo UPDATE, la IA llenará el formulario en lugar de intentar guardar en BD.
+     */
+    window.importarContratoIAModal = function () {
+        const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
+        if (!idContrato) return;
+
+        // 1. Configurar el modal global en modo UPDATE (Re-branding dinámico)
+        configurarRebrandModalIA('UPDATE_CONTRATO');
+
+        // 2. Definir el callback para que handleFilesIA sepa qué hacer con los datos
+        window.iaCallbackActual = function (datosExtraidos) {
+            console.log("IA_CALLBACK_UPDATE: Poblando formulario", datosExtraidos);
+            const form = document.getElementById('form-editar-datos-generales');
+            if (!form) return;
+
+            // Helper para escalar porcentajes (IA devuelve 30 para 30%, guardamos 30)
+            const scalePct = (val) => {
+                let n = parseFloat(val);
+                if (isNaN(n)) return 0;
+                // Si la IA nos da una fracción (0.3), lo llevamos a entero (30) para guardar en BD
+                return (n > 0 && n <= 1) ? n * 100 : n;
+            };
+
+            // Mapeo exhaustivo de campos extraídos vs nombres de input en el formulario
+            const mapeo = {
+                'Numero_Contrato': datosExtraidos.Numero_Contrato,
+                'Objeto_Contrato': datosExtraidos.Objeto_Contrato,
+                'Estado': datosExtraidos.Estado, // Ahora es ubicación geográfica
+                'Monto_Total_Sin_IVA': datosExtraidos.Montos?.Monto_Total_Sin_IVA,
+                'Monto_Total_Con_IVA': datosExtraidos.Montos?.Monto_Total_Con_IVA,
+                'Fecha_Firma': datosExtraidos.Fecha_Firma,
+                'Fecha_Inicio_Obra': datosExtraidos.Fecha_Inicio_Obra,
+                'Fecha_Fin_Obra': datosExtraidos.Fecha_Fin_Obra,
+                'Tipo_Contrato': datosExtraidos.Tipo_Contrato,
+                'Area_Responsable': datosExtraidos.Area_Responsable,
+                'No_Concurso': datosExtraidos.No_Concurso,
+                'Modalidad_Adjudicacion': datosExtraidos.Modalidad_Adjudicacion,
+                'Fecha_Adjudicacion': datosExtraidos.Fecha_Adjudicacion,
+                'Plazo_Ejecucion_Dias': datosExtraidos.Plazo_Ejecucion_Dias,
+                // Anticipo
+                'pct_Anticipo': scalePct(datosExtraidos.Anticipo?.pct_Anticipo),
+                'Monto_Anticipo': datosExtraidos.Anticipo?.Monto_Anticipo,
+                'No_Fianza_Anticipo': datosExtraidos.Fianzas?.Anticipo?.No_Fianza,
+                // Cumplimiento
+                'pct_Cumplimiento': scalePct(datosExtraidos.Fianzas?.Cumplimiento?.pct),
+                'Monto_Fianza_Cumplimiento': datosExtraidos.Fianzas?.Cumplimiento?.Monto,
+                'No_Fianza_Cumplimiento': datosExtraidos.Fianzas?.Cumplimiento?.No_Fianza,
+                // Vicios Ocultos
+                'pct_Vicios_Ocultos': scalePct(datosExtraidos.Fianzas?.Vicios_Ocultos?.pct),
+                'Monto_Fianza_Vicios_Ocultos': datosExtraidos.Fianzas?.Vicios_Ocultos?.Monto,
+                'No_Fianza_Vicios_Ocultos': datosExtraidos.Fianzas?.Vicios_Ocultos?.No_Fianza,
+                // Otros
+                'Nombre_Residente_Dependencia': datosExtraidos.Nombre_Residente_Dependencia,
+                'pct_Penas_Convencionales': scalePct(datosExtraidos.Retenciones_y_Penas?.pct_Penas_Convencionales),
+                'pct_Retencion_Incumplimiento': scalePct(datosExtraidos.Retenciones_y_Penas?.pct_Retencion_Incumplimiento),
+                'Otras_Retenciones_Pct': scalePct(datosExtraidos.Retenciones_y_Penas?.Otras_Retenciones_Pct),
+                // Indirectos (Sobrecostos)
+                'Pct_Indirectos_Oficina': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Indirectos_Oficina),
+                'Pct_Indirectos_Campo': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Indirectos_Campo),
+                'Pct_Indirectos_Totales': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Indirectos_Totales),
+                'Pct_Financiamiento': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Financiamiento),
+                'Pct_Utilidad': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Utilidad),
+                'Pct_Cargos_SFP': scalePct(datosExtraidos.porcentajes_contrato?.Pct_Cargos_SFP),
+                'Pct_ISN': scalePct(datosExtraidos.porcentajes_contrato?.Pct_ISN),
+                'Link_Sharepoint': datosExtraidos.Link_Sharepoint
+            };
+
+            const isoDate = (str) => {
+                if (!str) return '';
+                try {
+                    const d = new Date(str);
+                    if (isNaN(d.getTime())) return str; // Retornar tal cual si no es fecha válida pero no nulo
+                    return d.toISOString().split('T')[0];
+                } catch (e) { return str || ''; }
+            };
+
+            const inputs = form.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+                const name = input.getAttribute('name');
+                if (mapeo[name] !== undefined && mapeo[name] !== null) {
+                    if (input.type === 'date') {
+                        input.value = isoDate(mapeo[name]);
+                    } else {
+                        input.value = mapeo[name];
+                    }
+                    // Feedback visual de actualización
+                    input.classList.add('bg-emerald-50', 'ring-2', 'ring-emerald-200');
+                    setTimeout(() => input.classList.remove('bg-emerald-50', 'ring-2', 'ring-emerald-200'), 2500);
+                }
+            });
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Sincronización Exitosa',
+                text: 'Se han actualizado los campos del formulario con los datos detectados por la IA.',
+                timer: 3000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        };
+
+        // 3. Abrir el modal de Drag & Drop
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
     function renderizarConceptos(data) {
         const tbody = document.getElementById('tabla-conceptos-body');
         if (!tbody) return;
@@ -1077,8 +1344,7 @@
             return;
         }
 
-        const formatoMoneda = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
-        const formatoNumero = (v) => new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2 }).format(v || 0);
+
 
         let html = '';
         let subtotalGeneral = 0;
@@ -1501,7 +1767,10 @@
         if (!panel) return;
 
         const formatoM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
-        const formatoP = (v) => v ? parseFloat(v).toFixed(2) + '%' : '0.00%';
+        const formatoP = (v) => {
+            let n = parseFloat(v) || 0;
+            return (n > 1 || n < -1 ? n : n * 100).toFixed(2) + '%';
+        };
 
         if (document.getElementById('resumen-cd')) document.getElementById('resumen-cd').textContent = formatoM(data.Costo_Directo);
         if (document.getElementById('resumen-ind')) document.getElementById('resumen-ind').textContent = formatoM(data.Indirectos);
@@ -1530,7 +1799,7 @@
         const idConcepto = tr.dataset.id;
 
         // 1. Obtener el subtotal general del contrato (Catalog)
-        const subtotalContrato = (window.conceptosActuales || []).reduce((acc, c) => acc + (parseFloat(c.Importe_Total_Sin_IVA) || 0), 0) || 1;
+        const subtotalContrato = (window.programaActual ? window.programaActual.subtotalContrato : 0) || 1;
         const conceptoOrig = (window.conceptosActuales || []).find(c => String(c.ID_Concepto) === String(idConcepto));
         if (!conceptoOrig) return;
         const totalConcepto = parseFloat(conceptoOrig.Importe_Total_Sin_IVA) || 0;
@@ -1541,11 +1810,52 @@
         if (tipo === 'monto') {
             const valMonto = parseFloat(montoDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
             const nuevoPct = subtotalContrato > 0 ? (valMonto / subtotalContrato) : 0;
-            pctDiv.innerText = (nuevoPct * 100).toFixed(4) + '%';
+            // Solo sobreescribimos el % si no es la celda activa
+            if (celda !== pctDiv) pctDiv.innerText = formatoPct4(nuevoPct);
+
+            // Colores Dinámicos (Gris si es 0, negro si > 0)
+            if (valMonto > 0.001) {
+                montoDiv.classList.add('text-black');
+                montoDiv.classList.remove('text-slate-300');
+                pctDiv.classList.add('text-inst-oro');
+                pctDiv.classList.remove('text-slate-300');
+                pctDiv.classList.remove('font-medium'); // Quitar medium si tiene valor
+                pctDiv.classList.add('font-black');
+            } else {
+                montoDiv.classList.remove('text-black');
+                montoDiv.classList.add('text-slate-300');
+                pctDiv.classList.remove('text-inst-oro');
+                pctDiv.classList.add('text-slate-300');
+                pctDiv.classList.remove('font-black');
+                pctDiv.classList.add('font-medium');
+            }
         } else {
             const valPct = parseFloat(pctDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
-            const nuevoMonto = subtotalContrato * (valPct / 100);
-            montoDiv.innerText = formatoMoneda(nuevoMonto).replace('$', '').trim();
+            const nuevoMonto = Math.round((subtotalContrato * (valPct / 100)) * 100) / 100;
+
+            // Solo sobreescribimos el monto si no es la celda activa
+            if (celda !== montoDiv) montoDiv.innerText = formatoMoneda(nuevoMonto);
+
+            // Recalcular % ajustado desde el monto redondeado para evitar desajustes
+            const pctAjustado = subtotalContrato > 0 ? (nuevoMonto / subtotalContrato) : 0;
+            if (celda !== pctDiv) pctDiv.innerText = formatoPct4(pctAjustado);
+
+            // Colores Dinámicos
+            if (nuevoMonto > 0.001) {
+                montoDiv.classList.add('text-black');
+                montoDiv.classList.remove('text-slate-300');
+                pctDiv.classList.add('text-inst-oro');
+                pctDiv.classList.remove('text-slate-300');
+                pctDiv.classList.remove('font-medium');
+                pctDiv.classList.add('font-black');
+            } else {
+                montoDiv.classList.remove('text-black');
+                montoDiv.classList.add('text-slate-300');
+                pctDiv.classList.remove('text-inst-oro');
+                pctDiv.classList.add('text-slate-300');
+                pctDiv.classList.remove('font-black');
+                pctDiv.classList.add('font-medium');
+            }
         }
 
         // 2. Actualizar Total de Fila (Horizontal) e Indicador de Tope
@@ -1570,7 +1880,7 @@
                 }
             } else {
                 tdTotalFila.classList.remove('text-red-600', 'animate-pulse');
-                tdTotalFila.classList.add('text-slate-800');
+                tdTotalFila.classList.add('text-inst-vino');
                 if (indicator) {
                     if (sumaFila < (totalConcepto - 0.01)) {
                         indicator.innerText = 'Falta: ' + formatoMoneda(totalConcepto - sumaFila);
@@ -1615,11 +1925,11 @@
             // Update f1 (Importe) - cell index starts at 1 because of colspan=2
             if (f1 && f1.cells[idx + 1]) f1.cells[idx + 1].innerText = formatoMoneda(tv);
             // Update f2 (%)
-            if (f2 && f2.cells[idx + 1]) f2.cells[idx + 1].innerText = granTotalCalculado > 0 ? ((tv / granTotalCalculado) * 100).toFixed(4) + '%' : '0.0000%';
+            if (f2 && f2.cells[idx + 1]) f2.cells[idx + 1].innerText = subtotalContrato > 0 ? ((tv / subtotalContrato) * 100).toFixed(4) + '%' : '0.0000%';
             // Update f3 (Acumulado)
             if (f3 && f3.cells[idx + 1]) f3.cells[idx + 1].innerText = formatoMoneda(acumulado);
             // Update f4 (Avance %)
-            if (f4 && f4.cells[idx + 1]) f4.cells[idx + 1].innerText = granTotalCalculado > 0 ? ((acumulado / granTotalCalculado) * 100).toFixed(4) + '%' : '0.0000%';
+            if (f4 && f4.cells[idx + 1]) f4.cells[idx + 1].innerText = subtotalContrato > 0 ? ((acumulado / subtotalContrato) * 100).toFixed(4) + '%' : '0.0000%';
         });
 
         // Update gran total cells in summary rows
@@ -1631,7 +1941,18 @@
      * Guarda el cambio de un periodo específico en el servidor.
      */
     window.autoGuardarPeriodo = function (celda) {
-        if (celda.innerText === celda.dataset.original) return; // No hubo cambio real
+        // Normalizar comparación numérica para detectar cambios reales incluso de 0.01
+        const valActual = parseFloat(celda.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        const valOriginal = parseFloat((celda.dataset.original || "0").replace(/[^0-9.-]+/g, "")) || 0;
+
+        // Aplicar formato inmediatamente al perder el foco para feedback visual instantáneo
+        if (celda.dataset.tipo === 'monto') {
+            celda.innerText = formatoMoneda(valActual);
+        } else if (celda.dataset.tipo === 'pct') {
+            celda.innerText = formatoPct4(valActual / 100);
+        }
+
+        if (Math.abs(valActual - valOriginal) < 0.00001) return; // No hay cambio significativo
 
         const tr = celda.closest('tr');
         const tdParent = celda.closest('td');
@@ -1640,32 +1961,27 @@
         const idPrograma = window.programaActualId;
         const idPeriodo = celda.dataset.idPeriodo;
 
-        const montoVal = parseFloat(tdParent.querySelector('[data-tipo="monto"]').innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        const montoDiv = tdParent.querySelector('[data-tipo="monto"]');
+        const pctDiv = tdParent.querySelector('[data-tipo="pct"]');
+        const fuenteCambio = (celda === montoDiv) ? 'monto' : 'pct';
+
+        const montoVal = parseFloat(montoDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
+        const pctVal = parseFloat(pctDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
 
         tdParent.classList.add('bg-blue-50');
         toggleSpinner(true, "Actualizando periodo...");
 
         google.script.run
             .withSuccessHandler(function (res) {
-                toggleSpinner(false);
                 setTimeout(() => tdParent.classList.remove('bg-blue-50'), 400);
                 if (!res.success) {
+                    toggleSpinner(false);
                     tdParent.classList.add('bg-red-50');
                     setTimeout(() => tdParent.classList.remove('bg-red-50'), 2000);
                     manejarError(res);
                 } else {
-                    // Re-formatear con precisión al éxito (blur)
-                    const mDiv = tdParent.querySelector('[data-tipo="monto"]');
-                    const pDiv = tdParent.querySelector('[data-tipo="pct"]');
-
-                    const valMonto = parseFloat(mDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
-                    const valPct = parseFloat(pDiv.innerText.replace(/[^0-9.-]+/g, "")) || 0;
-
-                    mDiv.innerText = formatoMoneda(valMonto);
-                    pDiv.innerText = valPct.toFixed(4) + '%';
-
-                    mDiv.dataset.original = mDiv.innerText;
-                    pDiv.dataset.original = pDiv.innerText;
+                    // Refrescar matriz completa para asegurar sincronía de redondeos y totales
+                    window.generarPeriodosPrograma(); 
                 }
             })
             .withFailureHandler(function (err) {
@@ -1675,7 +1991,7 @@
                 setTimeout(() => tdParent.classList.remove('bg-red-50'), 2000);
                 manejarError({ error: err.message, functionName: 'autoGuardarPeriodo' });
             })
-            .actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo, montoVal);
+            .actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo, montoVal, pctVal, fuenteCambio);
     }
 
     /**
@@ -1685,7 +2001,7 @@
         const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
         if (!idContrato) return;
 
-        toggleSpinner(true, "Sincronizando estructura de niveles...");
+        toggleSpinner(true, "Sincronizando y recalculando programa...");
 
         google.script.run
             .withSuccessHandler(function (res) {
@@ -2052,8 +2368,10 @@
 
     window.cerrarModalImportacionIA = function () {
         document.getElementById('modal-importacion-ia').classList.add('hidden');
-        // Reset overlay when closing
+        // Reset overlay and visibility when closing
         updateAIStatus(false);
+        const dropZone = document.getElementById('drop-zone');
+        if (dropZone) dropZone.classList.remove('hidden');
     };
 
     window.setImportType = function (tipo) {
@@ -2142,7 +2460,14 @@
         const reader = new FileReader();
         reader.onload = function (evt) {
             const base64Data = evt.target.result;
-            const mimeType = file.type;
+            let mimeType = file.type;
+            
+            // Forzar MIME type de Excel si es genérico pero la extensión coincide
+            const fileName = file.name.toLowerCase();
+            if ((!mimeType || mimeType === 'application/octet-stream') && (fileName.endsWith('.xlsx') || fileName.endsWith('.xls'))) {
+                mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            }
+
             const targetTable = document.getElementById('import-type-actual').value;
 
             updateAIStatus(true, "Analizando con Agente IA...", "Extrayendo datos estructurados del documento");
@@ -2158,8 +2483,11 @@
 
             google.script.run
                 .withSuccessHandler(function (resIA) {
+                    // --- LOG NAVEGADOR (IMPORTADOR INDIVIDUAL) ---
+                    console.log("DEBUG_IA_RESPONSE:", resIA);
+
                     if (resIA && resIA.success) {
-                        const datosExtraidos = resIA.data.datos || resIA.data; // Compatibilidad con estructura nueva o vieja
+                        const datosExtraidos = resIA.data.datos || resIA.data;
                         // Preservar metadatos críticos para guardarDatosIA
                         datosExtraidos.tipo_documento = resIA.data.tipo_documento;
                         datosExtraidos.parentContext = resIA.data.parentContext;
@@ -2174,7 +2502,13 @@
                                     const cambios = resDiff.data;
                                     cerrarModalImportacionIA();
 
-                                    mostrarAdvertenciaCambiosIA(cambios, datosExtraidos, informeAuditoria);
+                                    // SI HAY UN CALLBACK PENDIENTE (MODO UPDATE), LO EJECUTAMOS
+                                    if (typeof window.iaCallbackActual === 'function') {
+                                        window.iaCallbackActual(datosExtraidos);
+                                        window.iaCallbackActual = null; // Limpiar para el siguiente uso
+                                    } else {
+                                        mostrarAdvertenciaCambiosIA(cambios, datosExtraidos, informeAuditoria);
+                                    }
 
                                     // Renderizar checklist en el panel de auditoría de la estimación
                                     if (checklistAuditoria && typeof renderizarChecklistAuditoria === 'function') {
@@ -2241,9 +2575,15 @@
         const hiddenInput = document.getElementById('import-type-actual');
 
         if (!hiddenInput) return; // Guard
-        hiddenInput.value = tipo;
+        hiddenInput.value = tipo === 'UPDATE_CONTRATO' ? 'Contratos' : tipo;
 
-        if (tipo === 'Contratos') {
+        if (tipo === 'UPDATE_CONTRATO') {
+            titulo.innerText = "Actualizar Datos del Contrato";
+            subtitulo.innerText = "Extracción Inteligente de Datos Generales";
+            helpText.innerText = "Suelta el PDF del Contrato aquí para poblar los campos";
+            iconContainer.classList.remove('bg-purple-50', 'text-purple-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
+            iconContainer.classList.add('bg-inst-vino', 'text-inst-oro');
+        } else if (tipo === 'Contratos') {
             titulo.innerText = "Importador de Contratos";
             subtitulo.innerText = "Carga contratos o convenios modificatorios";
             helpText.innerText = "Soporta PDF, Imagen y Excel de Contratos";
@@ -2279,6 +2619,12 @@
             helpText.innerText = "Soporta PDF o Excel de Programa de Obra";
             iconContainer.classList.remove('bg-blue-50', 'text-blue-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
             iconContainer.classList.add('bg-purple-50', 'text-purple-500');
+        } else if (tipo === 'Catalogo_Conceptos') {
+            titulo.innerText = "Importador de Catálogo";
+            subtitulo.innerText = "Carga Masiva de Conceptos y Precios";
+            helpText.innerText = "Soporta PDF o Excel con Tabla de Conceptos";
+            iconContainer.classList.remove('bg-purple-50', 'text-purple-500', 'bg-emerald-50', 'text-emerald-500', 'bg-amber-50', 'text-amber-500');
+            iconContainer.classList.add('bg-blue-50', 'text-blue-500');
         } else if (tipo === 'Batch') {
             titulo.innerText = "Procesamiento Maestro por Lotes";
             subtitulo.innerText = "Expediente Técnico Completo";
@@ -2286,6 +2632,84 @@
             iconContainer.className = "w-20 h-20 bg-inst-vino text-inst-oro rounded-2xl flex items-center justify-center mb-6 animate-pulse";
         }
     }
+
+    /**
+     * Abre el importador IA en modo ACTUALIZACIÓN para el contrato actual.
+     * Puebla automáticamente el formulario form-editar-datos-generales.
+     */
+    window.abrirImportadorIAActualizarContrato = function () {
+        window.iaCallbackActual = function (datos) {
+            console.log("IA Callback Actualizar Contrato:", datos);
+            if (!datos || !datos.Contratos) return;
+
+            const contrato = datos.Contratos;
+            const form = document.getElementById('form-editar-datos-generales');
+            if (!form) return;
+
+            // Función auxiliar para setear valores si existen
+            const setVal = (name, val) => {
+                const el = form.querySelector(`[name="${name}"]`);
+                if (el && val !== undefined && val !== null) {
+                    // Formatear fechas si es necesario (input type="date" espera YYYY-MM-DD)
+                    if (el.type === 'date' && val) {
+                        try {
+                            const d = new Date(val);
+                            if (!isNaN(d.getTime())) {
+                                el.value = d.toISOString().split('T')[0];
+                                return;
+                            }
+                        } catch (e) { console.error("Error formateando fecha:", val); }
+                    }
+                    el.value = val;
+                }
+            };
+
+            // Mapeo de campos (IA -> Formulario)
+            setVal('ID_Convenio_Vinculado', contrato.ID_Convenio_Vinculado);
+            setVal('ID_Contratista', contrato.ID_Contratista);
+            setVal('Objeto_Contrato', contrato.Objeto_Contrato);
+            setVal('Area_Responsable', contrato.Area_Responsable);
+            setVal('Ubicacion_Obra', contrato.Ubicacion_Obra);
+            setVal('Numero_Contrato', contrato.Numero_Contrato);
+            setVal('No_Concurso', contrato.No_Concurso);
+            setVal('Modalidad_Adjudicacion', contrato.Modalidad_Adjudicacion);
+
+            setVal('Fecha_Inicio_Obra', contrato.Fecha_Inicio_Obra);
+            setVal('Fecha_Fin_Obra', contrato.Fecha_Fin_Obra);
+            setVal('Plazo_Ejecucion_Dias', contrato.Plazo_Ejecucion_Dias);
+            setVal('Fecha_Adjudicacion', contrato.Fecha_Adjudicacion);
+            setVal('Fecha_Firma', contrato.Fecha_Firma);
+
+            setVal('Monto_Total_Sin_IVA', contrato.Monto_Total_Sin_IVA);
+            setVal('Monto_Total_Con_IVA', contrato.Monto_Total_Con_IVA);
+            setVal('pct_Anticipo', contrato.Porcentaje_Amortizacion_Anticipo);
+            setVal('pct_Penas_Convencionales', contrato.Porcentaje_Penas_Convencionales);
+            setVal('pct_Retencion_Incumplimiento', contrato.Retencion_Garantia_Pct);
+            setVal('Otras_Retenciones_Pct', contrato.Otras_Retenciones_Pct);
+
+            setVal('No_Fianza_Cumplimiento', contrato.No_Fianza_Cumplimiento);
+            setVal('Monto_Fianza_Cumplimiento', contrato.Monto_Fianza_Cumplimiento);
+            setVal('No_Fianza_Anticipo', contrato.No_Fianza_Anticipo);
+            setVal('Monto_Anticipo', contrato.Monto_Fianza_Anticipo);
+            setVal('No_Fianza_Vicios_Ocultos', contrato.No_Fianza_Vicios_Ocultos);
+            setVal('Monto_Fianza_Vicios_Ocultos', contrato.Monto_Fianza_Vicios_Ocultos);
+
+            setVal('Nombre_Residente_Dependencia', contrato.Nombre_Residente_Dependencia);
+            setVal('Estado', contrato.Estado);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Datos Extraídos',
+                text: 'Los campos del formulario han sido poblados con la información del documento.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        };
+
+        configurarRebrandModalIA('UPDATE_CONTRATO');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
 
     window.abrirImportadorIAEstimaciones = function () {
         configurarRebrandModalIA('Estimaciones');
@@ -2301,6 +2725,12 @@
 
     window.abrirImportadorIACAF = function () {
         configurarRebrandModalIA('CAF');
+        document.getElementById('modal-importacion-ia').classList.remove('hidden');
+        inicializarImportadorIA();
+    };
+
+    window.abrirImportadorIACatalogo = function () {
+        configurarRebrandModalIA('Catalogo_Conceptos');
         document.getElementById('modal-importacion-ia').classList.remove('hidden');
         inicializarImportadorIA();
     };
@@ -2342,14 +2772,23 @@
         inicializarImportadorIA();
     };
 
+    window.cerrarModalFianza = function() {
+        document.getElementById('modal-fianza-analisis').classList.add('hidden');
+        // Resetear visualmente para la próxima vez
+        const uploadArea = document.getElementById('fianza-upload-area');
+        const resultsArea = document.getElementById('fianza-resultado-ia');
+        if(uploadArea) uploadArea.classList.remove('hidden');
+        if(resultsArea) resultsArea.classList.add('hidden');
+    };
+
     /**
      * ORQUESTADOR DE IMPORTACIÓN POR LOTES (BATCH)
      * Procesa secuencialmente: 1. Contrato -> 2. CAF -> 3. Programa -> 4. APU
      */
     window.lanzarOrquestadorBatchIA = async function (queue) {
-        // Orden solicitado estricto: 1 (Contratos) -> 2 (CAF) -> 3 (Programa) -> 4 (APU)
-        const order = [1, 2, 3, 4];
-        const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos' };
+        // Orden solicitado estricto: 1 (Contratos) -> 2 (CAF) -> 3 (Programa) -> 4 (APU) -> 5 (Fianza)
+        const order = [1, 2, 3, 4, 5];
+        const types = { 1: 'Contratos', 2: 'CAF', 3: 'Programa', 4: 'Matriz_Insumos', 5: 'Fianza' };
 
         let idConvenioExtraido = null;
         let idContratoExtraido = null;
@@ -2401,6 +2840,11 @@
                 } else if (step === 3) {
                     // El catálogo de conceptos para el matching de APU
                     catalogoConceptosExtraido = resultado?.datos?.Catalogo_Conceptos || null;
+                } else if (step === 5) {
+                    const validacionFianza = resultado?.fullResponse?.validacion;
+                    if (validacionFianza) {
+                        window.fianzaValidationResult = validacionFianza;
+                    }
                 }
 
                 // Marcar slot como completado
@@ -2409,6 +2853,15 @@
 
             // Mostrar Modal Final de Resumen
             setTimeout(() => {
+                if (window.fianzaValidationResult && window.fianzaValidationResult.porcentaje_similitud < 95) {
+                    Swal.fire({
+                        title: '⚠️ Advertencia de Fianza',
+                        text: `El borrador de fianza tiene una similitud del ${window.fianzaValidationResult.porcentaje_similitud}% respecto al modelo del DOF. La afianzadora podría estar limitando su responsabilidad legal mediante modificaciones en la redacción.`,
+                        icon: 'warning',
+                        confirmButtonColor: '#f59e0b'
+                    });
+                }
+
                 const modal = document.getElementById('modal-resumen-batch');
                 if (modal) {
                     modal.classList.remove('hidden');
@@ -2443,6 +2896,9 @@
         return new Promise((resolve, reject) => {
             google.script.run
                 .withSuccessHandler((response) => {
+                    // --- LOG NAVEGADOR (ORQUESTADOR BATCH) ---
+                    console.log("DEBUG_IA_BATCH_RESPONSE:", response);
+
                     if (response.error) {
                         reject(new Error(response.error));
                     } else {
@@ -2450,7 +2906,7 @@
                         google.script.run
                             .withSuccessHandler((saveResponse) => {
                                 if (saveResponse.error) reject(new Error(saveResponse.error));
-                                else resolve({ datos: response.data.datos, ids: saveResponse.ids });
+                                else resolve({ datos: response.data.datos, ids: saveResponse.ids, fullResponse: response.data });
                             })
                             .withFailureHandler(reject)
                             .guardarDatosIA(response.data, table, context.ID_Convenio_Vinculado || null);
@@ -2501,7 +2957,7 @@
         }
 
         // Limpiar Queue y reinicializar vista local
-        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null, 5: null };
         const emptyState = document.getElementById('drop-zone-empty-state');
         const filledState = document.getElementById('drop-zone-filled-state');
         const dropZone = document.getElementById('drop-zone-batch');
@@ -2522,10 +2978,10 @@
         }
 
         // Resetear visualmente los slots (recorriendo todos)
-        for (let i = 1; i <= 4; i++) {
+        for (let i = 1; i <= 5; i++) {
             const slotContainer = document.getElementById(`slot-${i}`);
             if (slotContainer) {
-                const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
+                const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.', 5: 'Fianza' };
                 slotContainer.className = "bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative";
                 slotContainer.innerHTML = `
                     <div class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">${i}</div>
@@ -2538,10 +2994,10 @@
 
     // --- IMPORTACIÓN MAESTRA (BATCH UI CONTROLLER) --- //
 
-    window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+    window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null, 5: null };
 
     window.inicializarImportacionMaestra = function () {
-        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null };
+        window.batchQueueFiles = { 1: null, 2: null, 3: null, 4: null, 5: null };
         const dropZone = document.getElementById('drop-zone-batch');
         const fileInput = document.getElementById('file-input-batch');
 
@@ -2608,20 +3064,26 @@
             const reader = new FileReader();
             reader.onload = function (e) {
                 const base64Data = e.target.result;
-                const mimeType = file.type || 'application/pdf';
+                let mimeType = file.type || 'application/pdf';
+                
+                // Forzar MIME type de Excel si es genérico
+                const fileName = file.name.toLowerCase();
+                if ((mimeType === 'application/octet-stream' || !mimeType) && (fileName.endsWith('.xlsx') || fileName.endsWith('.xls'))) {
+                    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                }
 
                 google.script.run
                     .withSuccessHandler(function (res) {
                         removerItemDeColaIdentificacion(fileId);
                         if (res.success) {
                             const clase = res.clase;
-                            let slotMapping = { 'Contratos': 1, 'CAF': 2, 'Programa': 3, 'Matriz_Insumos': 4 };
-                            const finalSlot = slotMapping[clase] || [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || 1;
+                            let slotMapping = { 'Contratos': 1, 'CAF': 2, 'Programa': 3, 'Matriz_Insumos': 4, 'Fianza': 5 };
+                            const finalSlot = slotMapping[clase] || [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]) || 1;
 
                             // Si ya hay algo en ese slot, buscar el siguiente disponible
                             let assignedSlot = finalSlot;
                             if (window.batchQueueFiles[assignedSlot]) {
-                                assignedSlot = [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || assignedSlot;
+                                assignedSlot = [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]) || assignedSlot;
                             }
 
                             window.batchQueueFiles[assignedSlot] = file;
@@ -2694,7 +3156,8 @@
         else if (name.includes('caf') || name.includes('suficiencia') || name.includes('recurso')) target = 2;
         else if (name.includes('programa') || name.includes('calendario') || name.includes('trabajo')) target = 3;
         else if (name.includes('matriz') || name.includes('apu') || name.includes('unitario') || name.includes('insumo')) target = 4;
-        else target = [1, 2, 3, 4].find(s => !window.batchQueueFiles[s]) || suggestedSlot;
+        else if (name.includes('fianza') || name.includes('garant') || name.includes('poliza')) target = 5;
+        else target = [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]) || suggestedSlot;
 
         window.batchQueueFiles[target] = file;
         renderFileInSlotBatch(target, file);
@@ -2720,9 +3183,9 @@
     function renderFileInSlotBatch(id, file) {
         const slot = document.getElementById(`slot-${id}`);
         if (!slot) return;
-        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
-        const colors = { 1: 'bg-blue-600', 2: 'bg-emerald-600', 3: 'bg-purple-600', 4: 'bg-amber-600' };
-        const lightColors = { 1: 'bg-blue-50 text-blue-600', 2: 'bg-emerald-50 text-emerald-600', 3: 'bg-purple-50 text-purple-600', 4: 'bg-amber-50 text-amber-600' };
+        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.', 5: 'Fianza' };
+        const colors = { 1: 'bg-blue-600', 2: 'bg-emerald-600', 3: 'bg-purple-600', 4: 'bg-amber-600', 5: 'bg-rose-600' };
+        const lightColors = { 1: 'bg-blue-50 text-blue-600', 2: 'bg-emerald-50 text-emerald-600', 3: 'bg-purple-50 text-purple-600', 4: 'bg-amber-50 text-amber-600', 5: 'bg-rose-50 text-rose-600' };
 
         slot.className = `bg-white border-2 border-solid ${lightColors[id].split(' ')[1].replace('text-', 'border-')} rounded-[2rem] p-8 flex flex-col items-center text-center shadow-lg transition-all scale-105 opacity-100 z-10`;
         slot.innerHTML = `
@@ -2743,7 +3206,7 @@
         window.batchQueueFiles[id] = null;
         const slot = document.getElementById(`slot-${id}`);
         if (!slot) return;
-        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.' };
+        const labels = { 1: 'Contrato', 2: 'CAF / Suficiencia', 3: 'Programa de Obra', 4: 'Análisis de P.U.', 5: 'Fianza' };
         slot.className = "bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative";
         slot.innerHTML = `
             <div class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">${id}</div>
@@ -2798,6 +3261,10 @@
         const modalTitulo = document.getElementById('modal-titulo-ia-war');
         const modalIcono = document.getElementById('modal-icono-ia-war');
         const svgHeader = document.getElementById('svg-header-auditoria');
+
+        // Ocultar zona de carga si estamos en el mismo modal (Limpieza Visual)
+        const dropZone = document.getElementById('drop-zone');
+        if (dropZone) dropZone.classList.add('hidden');
 
         listContainer.innerHTML = '';
 
@@ -3015,10 +3482,15 @@
                     });
 
                     if (typeof inicializarContratos === 'function') inicializarContratos();
-                    // Si estamos en detalle de contrato, recargar los conceptos
-                    const idContrato = window.vistaActualParams ? window.vistaActualParams.id : null;
-                    if (idContrato && window.view_active === 'contrato_detalle.vw') {
-                        renderizarContratoDetalle(idContrato);
+                    // Si estamos en detalle de contrato, recargar los conceptos y el programa
+                    const idContratoRefresh = window.idContratoActual || (window.vistaActualParams ? window.vistaActualParams.id : null);
+                    if (idContratoRefresh && typeof window.inicializarContratoDetalle === 'function') {
+                        console.log("IA_REFRESH: Disparando recarga de detalle para id:", idContratoRefresh);
+                        window.inicializarContratoDetalle({ id: idContratoRefresh });
+                        // Refuerzo específico para el programa si estamos en esa vista
+                        if (typeof window.generarPeriodosPrograma === 'function') {
+                            window.generarPeriodosPrograma();
+                        }
                     }
                 } else {
                     manejarError(res || { success: false, error: "Error en el guardado IA", functionName: "guardarDatosIA" });
@@ -3300,6 +3772,25 @@
         if (isApproved) {
             statusLabel.classList.add('hidden');
             approvedLabel.classList.remove('hidden');
+            
+            // WOW Effect: SweetAlert Toast de éxito
+            const Toast = Swal.mixin({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer)
+                    toast.addEventListener('mouseleave', Swal.resumeTimer)
+                }
+            });
+
+            Toast.fire({
+                icon: 'success',
+                title: 'Contrato Validado',
+                text: 'El dictamen ha sido aprobado exitosamente.'
+            });
         } else {
             statusLabel.classList.remove('hidden');
             approvedLabel.classList.add('hidden');
@@ -3309,14 +3800,13 @@
         const seccionFactura = document.getElementById('seccion-carga-factura-timbrada');
         if (seccionFactura) {
             if (isApproved) {
-                seccionFactura.classList.remove('hidden');
+                seccionFactura.classList.remove('hidden', 'animate-in', 'fade-in', 'slide-in-from-top-4');
+                void seccionFactura.offsetWidth; // Trigger reflow
+                seccionFactura.classList.add('animate-in', 'fade-in', 'slide-in-from-top-4', 'duration-500');
             } else {
                 seccionFactura.classList.add('hidden');
             }
         }
-
-        // Podríamos persistir este cambio de estado aquí si fuera necesario
-        // google.script.run.actualizarEstadoAprobacion(window.idEstimacionActual, isApproved ? 'APROBADA' : 'EN_REVISION');
     };
 
     /**
@@ -3326,18 +3816,35 @@
         const container = document.getElementById('checklist-auditoria-container');
         if (!container || !checklist) return;
 
-        container.innerHTML = checklist.map(item => {
-            const colorClass = item.aprobado ? 'text-emerald-500 bg-emerald-50 border-emerald-100' : 'text-rose-500 bg-rose-50 border-rose-100';
-            const icon = item.aprobado ?
-                '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' :
-                '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>';
+        if (checklist.length === 0) {
+            container.innerHTML = `
+                <div class="flex items-center gap-3 py-1">
+                    <div class="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center shrink-0">
+                        <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <p class="text-[10px] text-slate-400 font-bold italic uppercase tracking-tighter">No hay observaciones registradas.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = checklist.map((item, index) => {
+            const isOk = item.aprobado;
+            const colorClass = isOk ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100' : 'text-rose-600 bg-rose-50/50 border-rose-100';
+            const icon = isOk ?
+                '<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"></path></svg>' :
+                '<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            const badgeColor = isOk ? 'bg-emerald-500' : 'bg-rose-500';
 
             return `
-                <div class="bg-white border rounded-2xl px-4 py-3 flex items-start shadow-sm transition-all group relative ${colorClass} hover:shadow-md">
-                    <div class="mt-0.5">${icon}</div>
-                    <div class="flex-1 min-w-0 ml-2">
-                        <div class="text-[11px] font-black uppercase tracking-tighter leading-tight mb-1">${item.rubro}</div>
-                        <div class="text-[10px] font-medium leading-tight text-slate-500 opacity-80">${item.observacion || 'Cumplimiento verificado.'}</div>
+                <div class="flex items-start gap-4 p-3 rounded-2xl border transition-all hover:shadow-sm animate-in fade-in slide-in-from-right-2 duration-300" 
+                     style="animation-delay: ${index * 50}ms; ${isOk ? 'border-color: #d1fae5;' : 'border-color: #fee2e2;'}">
+                    <div class="w-6 h-6 ${badgeColor} rounded-lg flex items-center justify-center shrink-0 text-white shadow-sm mt-0.5">
+                        ${icon}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[10px] font-black uppercase tracking-tight leading-none mb-1 ${isOk ? 'text-emerald-800' : 'text-rose-800'}">${item.rubro}</p>
+                        <p class="text-[9px] font-bold text-slate-500 leading-tight italic line-clamp-2">${item.observacion || 'Cumplimiento verificado satisfactoriamente.'}</p>
                     </div>
                 </div>
             `;
@@ -3452,7 +3959,7 @@
                         <div class="pt-4 border-t border-slate-100 flex justify-between items-end">
                             <div>
                                 <p class="text-sm font-black text-slate-300 uppercase tracking-wider mb-0.5">Alcance Líquido</p>
-                                <p class="text-xl font-black text-inst-vino tracking-tighter">${formatM(est.Monto_Neto_A_Pagar)}</p>
+                                <p class="text-xl font-black text-inst-vino tracking-tighter">${formatoMoneda(est.Monto_Neto_A_Pagar)}</p>
                             </div>
                             <div class="h-10 w-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300 group-hover:bg-inst-vino group-hover:text-white transition-all">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg>
@@ -3593,7 +4100,7 @@
      */
     function renderizarTablaConceptosEstimacion(conceptos) {
         const tbody = document.getElementById('tabla-detalle-estimacion-body');
-        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
+
 
         if (conceptos.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="px-2 py-20 text-center"><div class="flex flex-col items-center justify-center space-y-4 text-slate-300"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><p class="text-sm font-black uppercase tracking-wider">No hay conceptos vinculados</p></div></td></tr>`;
@@ -3605,8 +4112,7 @@
             const pu = parseFloat(c.Precio_Unitario_Contrato) || 0;
             const importeActual = cantEstActual * pu;
 
-            // Simulación de datos anteriores (esto debería venir del backend en el futuro)
-            const cantAnt = parseFloat(c.Avance_Acumulado_Anterior_Cant) || 0;
+            const cantAnt = parseFloat(c.Cantidad_Anterior) || 0;
             const impAnt = cantAnt * pu;
 
             const cantAcum = cantAnt + cantEstActual;
@@ -3615,37 +4121,37 @@
             return `
                 <tr class="group hover:bg-slate-50 transition-all border-b border-slate-100" data-id-concepto="${c.ID_Concepto}">
                     <!-- Base Operativa -->
-                    <td class="px-6 py-5 border-r border-slate-100">
-                        <div class="text-sm font-black text-inst-vino uppercase tracking-tight">${c.Clave}</div>
+                    <td class="px-6 py-5 border-r border-slate-100 bg-white group-hover:bg-slate-50">
+                        <div class="text-[11px] font-black text-inst-vino uppercase tracking-tight">${c.Clave}</div>
                     </td>
                     <td class="px-6 py-5 border-r border-slate-100">
-                        <div class="text-sm text-slate-500 font-medium leading-tight max-w-sm line-clamp-2" title="${c.Descripcion}">${c.Descripcion}</div>
+                        <div class="text-[11px] text-slate-500 font-bold leading-relaxed max-w-sm line-clamp-2" title="${c.Descripcion}">${c.Descripcion}</div>
                     </td>
                     <td class="px-6 py-5 text-center border-r border-slate-100">
-                        <span class="text-sm font-black text-slate-400 uppercase tracking-wider">${c.Unidad}</span>
+                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.Unidad}</span>
                     </td>
                     
                     <!-- Finanzas -->
-                    <td class="px-6 py-5 text-right border-r border-slate-100 font-mono text-sm font-bold text-slate-500 bg-slate-50/30">${formatM(pu)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 font-mono text-xs font-bold text-slate-600 bg-slate-50/20">${formatoMoneda(pu)}</td>
                     
                     <!-- Acumulado Anterior -->
-                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-sm font-bold text-slate-400 val-cant-ant">${cantAnt.toFixed(2)}</td>
-                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-sm font-bold text-slate-400 val-imp-ant">${formatM(impAnt)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-xs font-bold text-slate-400 val-cant-ant">${cantAnt.toFixed(2)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-slate-100/10 text-xs font-bold text-slate-400 val-imp-ant">${formatoMoneda(impAnt)}</td>
                     
                     <!-- Este Periodo (Editable) -->
-                    <td class="px-6 py-3 text-right border-r border-slate-100 bg-emerald-50/10">
+                    <td class="px-6 py-4 text-right border-r border-slate-100 bg-emerald-50/10">
                         <input type="number" step="any" value="${cantEstActual}" data-original="${cantEstActual}"
                             onchange="recalcularTotalesCaratula()"
                             oninput="verificarCambiosEstimacion()"
                             data-pu="${pu}"
                             data-cant-ant="${cantAnt}"
-                            class="input-cantidad-est w-28 bg-white border border-emerald-200 rounded-xl px-3 py-2 text-right text-sm font-black text-emerald-700 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all shadow-sm">
+                            class="input-cantidad-est w-24 bg-white border border-emerald-200 rounded-xl px-3 py-2.5 text-right text-xs font-black text-emerald-700 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all shadow-sm">
                     </td>
-                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-emerald-50/20 text-sm font-black text-emerald-700 val-importe-est">${formatM(importeActual)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-emerald-50/20 text-xs font-black text-emerald-700 val-importe-est">${formatoMoneda(importeActual)}</td>
                     
                     <!-- Cierre Actual -->
-                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-inst-oro/5 font-black text-inst-vino text-sm val-pct-acumulado-est">0.0000%</td>
-                    <td class="px-6 py-5 text-right bg-inst-oro/5 font-black text-inst-vino text-sm val-imp-acumulado-est">${formatM(impAcum)}</td>
+                    <td class="px-6 py-5 text-right border-r border-slate-100 bg-inst-oro/5 font-black text-inst-vino text-xs val-pct-acumulado-est">0.0000%</td>
+                    <td class="px-6 py-5 text-right bg-inst-oro/5 font-black text-inst-vino text-xs val-imp-acumulado-est">${formatoMoneda(impAcum)}</td>
                 </tr>
             `;
         }).join('');
@@ -3656,7 +4162,6 @@
      */
     window.recalcularTotalesCaratula = function () {
         const inputs = document.querySelectorAll('.input-cantidad-est');
-        const formatM = (v) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0);
 
         let totalBrutoActual = 0;
         let totalBrutoAnt = 0;
@@ -3675,12 +4180,11 @@
             totalBrutoAnt += importeAnt;
 
             const tr = input.closest('tr');
-            tr.querySelector('.val-importe-est').innerText = formatM(importeActual);
-            tr.querySelector('.val-imp-acumulado-est').innerText = formatM(importeAcum);
+            if (tr.querySelector('.val-importe-est')) tr.querySelector('.val-importe-est').innerText = formatoMoneda(importeActual);
+            if (tr.querySelector('.val-imp-acumulado-est')) tr.querySelector('.val-imp-acumulado-est').innerText = formatoMoneda(importeAcum);
 
-            // Recalcular % acumulado del concepto (Relativo al TOTAL del contrato)
             const pctAcum = (importeAcum / montoTotalC) * 100;
-            tr.querySelector('.val-pct-acumulado-est').innerText = pctAcum.toFixed(4) + '%';
+            if (tr.querySelector('.val-pct-acumulado-est')) tr.querySelector('.val-pct-acumulado-est').innerText = pctAcum.toFixed(4) + '%';
         });
 
         const totalBrutoAcum = totalBrutoAnt + totalBrutoActual;
@@ -3693,26 +4197,26 @@
         const pctEstePeriodo = (totalBrutoActual / montoTotalC) * 100;
         const pctAcumulado = (totalBrutoAcum / montoTotalC) * 100;
 
-        // Actualizar UI Carátula
-        document.getElementById('lbl-caratula-bruto').innerText = formatM(totalBrutoActual);
-        document.getElementById('val-caratula-bruto').innerText = formatM(totalBrutoActual);
-        document.getElementById('val-caratula-iva').innerText = formatM(iva);
-        document.getElementById('val-caratula-sfp').innerText = formatM(sfp);
-        document.getElementById('val-caratula-neto').innerText = formatM(alcanceLiquido);
-        document.getElementById('lbl-total-detalle-sin-iva').innerText = formatM(totalBrutoActual);
+        // Actualizar UI Carátula (Nuevos IDs y Antiguos)
+        const updateText = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+        
+        updateText('lbl-caratula-bruto', formatoMoneda(totalBrutoActual));
+        updateText('val-caratula-bruto', formatoMoneda(totalBrutoActual));
+        updateText('val-caratula-iva', formatoMoneda(iva));
+        updateText('val-caratula-sfp', formatoMoneda(sfp));
+        updateText('val-caratula-neto', formatoMoneda(alcanceLiquido));
+        updateText('lbl-total-detalle-sin-iva', formatoMoneda(totalBrutoActual));
 
-        // Nuevo: Mostrar Importe con Letra
         if (document.getElementById('lbl-caratula-monto-letra')) {
             const montoLetra = convertirNumeroALetras(alcanceLiquido);
             document.getElementById('lbl-caratula-monto-letra').innerText = `SON: (${montoLetra})`;
         }
 
-        document.getElementById('lbl-caratula-pct-avance').innerText = pctEstePeriodo.toFixed(2) + '%';
-        document.getElementById('bar-caratula-avance').style.width = pctEstePeriodo.toFixed(2) + '%';
+        updateText('lbl-caratula-pct-avance', pctEstePeriodo.toFixed(2) + '%');
+        const bar = document.getElementById('bar-caratula-avance');
+        if (bar) bar.style.width = Math.min(pctEstePeriodo, 100).toFixed(2) + '%';
 
-        if (document.getElementById('lbl-caratula-avance-acum')) {
-            document.getElementById('lbl-caratula-avance-acum').innerText = pctAcumulado.toFixed(2) + '%';
-        }
+        updateText('lbl-caratula-avance-acum', pctAcumulado.toFixed(2) + '%');
     };
 
     /**
@@ -3781,6 +4285,479 @@
                 }
             })
             .actualizarDetalleEstimacion(window.idEstimacionActual, items);
+    };
+
+    // --- MÓDULO DE ANÁLISIS DE FIANZA ---
+
+    /**
+     * Abre el modal de análisis de fianza pre-configurando el tipo.
+     */
+    window.abrirModalAnalisisFianza = function (tipo) {
+        if (!tipo) return;
+
+        const modal = document.getElementById('modal-fianza-analisis');
+        const selectTipo = document.getElementById('fianza-tipo-select');
+        const selectAccion = document.getElementById('fianza-accion-select');
+
+        selectTipo.value = tipo;
+        selectAccion.value = 'validar';
+
+        // Reset UI
+        toggleFianzaUploadArea();
+        document.getElementById('fianza-resultado-ia').classList.add('hidden');
+        document.getElementById('fianza-file-name').classList.add('hidden');
+        document.getElementById('fianza-file-input').value = '';
+
+        modal.classList.remove('hidden');
+    };
+
+    window.cerrarModalFianza = function () {
+        document.getElementById('modal-fianza-analisis').classList.add('hidden');
+        window.fianzaFileBase64 = null;
+        window.fianzaFileMimeType = null;
+    };
+
+    /**
+     * Alterna la visibilidad del área de carga según si es Borrador o Validación IA.
+     */
+    window.toggleFianzaUploadArea = function () {
+        const accion = document.getElementById('fianza-accion-select').value;
+        const uploadArea = document.getElementById('fianza-upload-area');
+        const btnText = document.getElementById('btn-fianza-text');
+
+        if (accion === 'validar') {
+            uploadArea.classList.remove('hidden');
+            btnText.innerText = 'Iniciar Validación IA';
+        } else {
+            uploadArea.classList.remove('hidden'); // Siempre visible ahora
+            btnText.innerText = 'Registrar Borrador';
+        }
+    };
+
+    /**
+     * Maneja el arrastre sobre la zona de carga.
+     */
+    window.handleFianzaDragOver = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const zone = document.getElementById('fianza-drop-zone');
+        zone.classList.add('drag-over');
+        zone.classList.remove('bg-slate-50/50');
+        zone.classList.add('bg-inst-crema/10');
+        zone.classList.add('border-inst-oro');
+    };
+
+    /**
+     * Maneja la salida del arrastre de la zona de carga.
+     */
+    window.handleFianzaDragLeave = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const zone = document.getElementById('fianza-drop-zone');
+        zone.classList.remove('drag-over', 'bg-inst-crema/10', 'border-inst-oro');
+        zone.classList.add('bg-slate-50/50');
+    };
+
+    /**
+     * Maneja el soltado de archivos.
+     */
+    window.handleFianzaDrop = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleFianzaDragLeave(e);
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            procesarArchivoFianza(files[0]);
+        }
+    };
+
+    /**
+     * Maneja la selección manual de archivo.
+     */
+    window.handleFianzaFileSelect = function (input) {
+        if (input.files && input.files[0]) {
+            procesarArchivoFianza(input.files[0]);
+        }
+    };
+
+    /**
+     * Lógica compartida para leer y preparar el archivo.
+     */
+    function procesarArchivoFianza(file) {
+        if (!file.type.match('application/pdf') && !file.type.match('image.*')) {
+            Swal.fire('Formato no válido', 'Solo se aceptan archivos PDF o imágenes.', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        const fileNameEl = document.getElementById('fianza-file-name');
+
+        fileNameEl.innerText = `ARCHIVO: ${file.name}`;
+        fileNameEl.classList.remove('hidden');
+
+        reader.onload = function (e) {
+            window.fianzaFileBase64 = e.target.result;
+            window.fianzaFileMimeType = file.type;
+
+            // Si la acción es validar, iniciar automáticamente para una experiencia premium
+            const accion = document.getElementById('fianza-accion-select').value;
+            if (accion === 'validar') {
+                ejecutarAccionFianza();
+            } else {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Archivo cargado',
+                    text: 'Se ha cargado el borrador. Haz clic en "Ejecutar Acción" para analizar.',
+                    timer: 2000,
+                    showConfirmButton: false,
+                    customClass: { popup: 'rounded-[2rem]' }
+                });
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    /**
+     * Ejecuta la acción seleccionada (Borrador o Validación).
+     */
+    window.ejecutarAccionFianza = function () {
+        const accion = document.getElementById('fianza-accion-select').value;
+        const tipo = document.getElementById('fianza-tipo-select').value;
+        const idContrato = window.idContratoActual;
+
+        if (!idContrato) {
+            Swal.fire('Error', 'No se ha identificado el contrato actual.', 'error');
+            return;
+        }
+
+        // Si es borrador y no hay archivo, registramos directo sin IA
+        const hasFile = !!window.fianzaFileBase64;
+        if (accion === 'borrador' && !hasFile) {
+            registrarFianzaBorrador(idContrato, tipo);
+            return;
+        }
+
+        // De lo contrario, validamos contra el modelo DOF
+        validarFianzaConIA(idContrato, tipo, accion);
+    };
+
+    /**
+     * Registra el estatus de la fianza como BORRADOR.
+     */
+    function registrarFianzaBorrador(idContrato, tipo) {
+        if (!idContrato) {
+            Swal.fire('Error', 'No se ha identificado el contrato.', 'error');
+            return;
+        }
+        toggleSpinner(true, "Registrando borrador...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    Swal.fire('Estatus Actualizado', `La fianza de ${tipo} ha sido marcada como BORRADOR.`, 'success');
+                    cerrarModalFianza();
+                    // Refrescar labels
+                    if (window.vistaActualParams) inicializarContratoDetalle(window.vistaActualParams);
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'registrarFianzaBorrador' });
+            })
+            .actualizarEstatusFianzaBorrador(idContrato, tipo);
+    }
+
+    /**
+     * Envía el documento a la IA para validación conforme a modelos DOF.
+     */
+    function validarFianzaConIA(idContrato, tipo, accion = 'validar') {
+        const hasFile = !!window.fianzaFileBase64;
+        const msg = hasFile ? "Analizando Póliza con Gemini 1.5 Pro..." : "Validando Contexto del Contrato vs Modelo DOF...";
+
+        toggleSpinner(true, msg);
+
+        const contrato = window.contratoActual || {};
+        const montoBase = parseFloat(contrato.Monto_Total_Sin_IVA) || 0;
+        const tipoContratoStr = (contrato.Tipo_Contrato || '').toUpperCase();
+
+        // Determinar Ley Aplicable
+        let leyAplicable = 'LAASSP (Adquisiciones)';
+        if (tipoContratoStr.includes('OBRA') || tipoContratoStr.includes('RELACIONADOS')) {
+            leyAplicable = 'LOPSRM (Obras Públicas)';
+        }
+
+        let montoEsperado = 0;
+        let pctEsperado = 0;
+        if (tipo === 'Cumplimiento') {
+            pctEsperado = parseFloat(contrato.pct_Cumplimiento) || 10;
+            montoEsperado = montoBase * (pctEsperado / 100);
+        } else if (tipo === 'Anticipo') {
+            pctEsperado = parseFloat(contrato.pct_Anticipo) || 0;
+            montoEsperado = parseFloat(contrato.Monto_Fianza_Anticipo) || (montoBase * (pctEsperado / 100));
+        } else if (tipo === 'Vicios Ocultos') {
+            pctEsperado = parseFloat(contrato.pct_Vicios_Ocultos) || 10;
+            montoEsperado = montoBase * (pctEsperado / 100);
+        }
+
+        const context = {
+            ID_Contrato: idContrato,
+            Tipo_Garantia: tipo,
+            Ley_Aplicable: leyAplicable,
+            Es_Borrador: accion === 'borrador',
+            Monto_Contrato_Sin_IVA: montoBase,
+            Monto_Esperado_Garantia: montoEsperado,
+            Datos_Suelo: contrato
+        };
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success && res.data) {
+                    renderizarResultadoFianzaIA(res.data);
+
+                    const val = res.data.validacion || {};
+                    const esValida = val.estatus === 'VALIDA';
+
+                    if (esValida) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: accion === 'borrador' ? '¡Contexto Validado!' : '¡Fianza Válida!',
+                            text: accion === 'borrador' ?
+                                'Los datos del contrato cumplen con el modelo. Puedes proceder con la fianza.' :
+                                'La póliza coincide perfectamente con el modelo oficial.',
+                            confirmButtonColor: '#059669'
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Discrepancias en el Análisis',
+                            text: 'Se han detectado irregularidades respecto al modelo oficial del DOF.',
+                            confirmButtonColor: '#e11d48'
+                        });
+                    }
+                    // Guardar resultado para uso posterior (siempre, para permitir Omitir/Forzar)
+                    window.ultimoResultadoFianzaIA = { idContrato, tipo, data: res.data, accion };
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'validarFianzaConIA' });
+            })
+            .processDocumentWithAI(window.fianzaFileBase64, window.fianzaFileMimeType, 'Fianza', JSON.stringify(context));
+    }
+
+    /**
+     * Muestra visualmente el resultado de la validación IA en el modal.
+     */
+    function renderizarResultadoFianzaIA(data) {
+        const container = document.getElementById('fianza-resultado-ia');
+        const statusBadge = document.getElementById('fianza-status-badge');
+        const statusIcon = document.getElementById('fianza-status-icon');
+        const statusText = document.getElementById('fianza-status-text');
+        const btnAplicar = document.getElementById('btn-aplicar-fianza');
+        const btnEjecutar = document.getElementById('btn-ejecutar-fianza');
+        const btnOmitir = document.getElementById('btn-omitir-fianza');
+        const containerErrores = document.getElementById('fianza-errores-container');
+        const listaErrores = document.getElementById('fianza-lista-errores');
+
+        const resumenContainer = document.getElementById('fianza-resumen-container');
+        const resumenTexto = document.getElementById('fianza-resumen-texto');
+        const checklistContainer = document.getElementById('fianza-checklist-container');
+        const checklistGrid = document.getElementById('fianza-checklist-grid');
+
+        const val = data.validacion || {};
+        const esValida = val.estatus === 'VALIDA';
+
+        // Ocultar zona de carga para maximizar espacio de resultados
+        const uploadArea = document.getElementById('fianza-upload-area');
+        if (uploadArea) uploadArea.classList.add('hidden');
+
+        container.classList.remove('hidden');
+
+        // 0. Datos Extraídos
+        const extracted = data.datos_extraidos || {};
+        const containerExt = document.getElementById('fianza-datos-extraidos');
+        if (containerExt && extracted.num_fianza) {
+            containerExt.classList.remove('hidden');
+            document.getElementById('fianza-ia-numero').innerText = extracted.num_fianza;
+            document.getElementById('fianza-ia-monto').innerText = formatoMoneda(extracted.monto_documento);
+            document.getElementById('fianza-ia-afianzadora').innerText = extracted.nombre_afianzadora || 'NO DETECTADA';
+            
+            const pctIA = extracted.pct_fianza_documento;
+            const pctLabel = document.getElementById('fianza-ia-pct');
+            if (pctLabel) {
+                pctLabel.innerText = pctIA ? pctIA.toFixed(2) + '%' : '---';
+            }
+        } else if (containerExt) {
+            containerExt.classList.add('hidden');
+        }
+
+        // 1. Estatus General
+        if (esValida) {
+            statusBadge.className = "p-4 rounded-2xl flex items-center justify-between border border-emerald-100 bg-emerald-50";
+            statusIcon.className = "w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500 text-white";
+            statusIcon.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>';
+            statusText.innerText = "Cumple Modelo DOF";
+            statusText.className = "text-sm font-black uppercase tracking-widest text-emerald-700";
+            if (btnAplicar) btnAplicar.classList.remove('hidden');
+            if (btnEjecutar) btnEjecutar.classList.add('hidden');
+            if (btnOmitir) btnOmitir.classList.add('hidden');
+        } else {
+            statusBadge.className = "p-4 rounded-2xl flex items-center justify-between border border-rose-100 bg-rose-50";
+            statusIcon.className = "w-10 h-10 rounded-xl flex items-center justify-center bg-rose-500 text-white";
+            statusIcon.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            statusText.innerText = "Discrepancias";
+            statusText.className = "text-sm font-black uppercase tracking-widest text-rose-700";
+            if (btnAplicar) btnAplicar.classList.add('hidden');
+            if (btnEjecutar) btnEjecutar.classList.remove('hidden');
+            if (btnOmitir) btnOmitir.classList.remove('hidden');
+        }
+
+        document.getElementById('fianza-confianza-text').innerText = data.tipo_identificado || 'Análisis Técnico';
+
+        // 2. Resumen Crítico
+        if (val.resumen_critico) {
+            resumenContainer.classList.remove('hidden');
+            resumenTexto.innerText = val.resumen_critico;
+        } else {
+            resumenContainer.classList.add('hidden');
+        }
+
+        // 3. Checklist
+        if (val.checklist && val.checklist.length > 0) {
+            checklistContainer.classList.remove('hidden');
+            checklistGrid.innerHTML = val.checklist.map(item => `
+                <div class="flex items-center gap-3 p-3 rounded-xl ${item.pasa ? 'bg-emerald-50/50' : 'bg-rose-50/50'} border ${item.pasa ? 'border-emerald-100' : 'border-rose-100'}">
+                    <div class="w-5 h-5 rounded-full flex items-center justify-center ${item.pasa ? 'bg-emerald-500' : 'bg-rose-500'} text-white">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            ${item.pasa ?
+                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>' :
+                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path>'}
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-black uppercase tracking-tighter ${item.pasa ? 'text-emerald-700' : 'text-rose-700'}">${item.criterio}</p>
+                        <p class="text-[10px] font-bold text-slate-500">${item.observacion}</p>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            checklistContainer.classList.add('hidden');
+        }
+
+        // 4. Errores/Diferencias (Solo si no es válida)
+        if (!esValida && val.checklist && val.checklist.some(i => !i.pasa)) {
+            containerErrores.classList.remove('hidden');
+            const fallos = val.checklist.filter(i => !i.pasa);
+            listaErrores.innerHTML = fallos.map(f => `<li>${f.criterio}: ${f.observacion}</li>`).join('');
+        } else {
+            containerErrores.classList.add('hidden');
+        }
+
+        // Ocultar medidor de similitud viejo ya que ahora usamos checklist
+        document.getElementById('fianza-similitud-pct').parentElement.classList.add('hidden');
+    }
+
+    /**
+     * Persiste los datos de la fianza validados por la IA tras aprobación del usuario.
+     */
+    window.guardarFianzaValidada = function() {
+        const resIA = window.ultimoResultadoFianzaIA;
+        if (!resIA) return;
+
+        toggleSpinner(true, "Actualizando estatus de fianza...");
+
+        google.script.run
+            .withSuccessHandler(function (res) {
+                toggleSpinner(false);
+                if (res.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Estatus Actualizado',
+                        text: `Se ha registrado el No. de Póliza y el Monto para la fianza de ${resIA.tipo}.`,
+                        confirmButtonColor: '#059669',
+                        customClass: { popup: 'rounded-[2rem]' }
+                    });
+                    cerrarModalFianza();
+                    // Refrescar labels en el detalle
+                    if (window.vistaActualParams) inicializarContratoDetalle(window.vistaActualParams);
+                } else {
+                    manejarError(res);
+                }
+            })
+            .withFailureHandler(function (err) {
+                toggleSpinner(false);
+                manejarError({ error: err.message, functionName: 'guardarFianzaValidada' });
+            })
+            .actualizarFianzaDesdeIA(resIA.idContrato, resIA.tipo, resIA.data, resIA.accion);
+    };
+
+    /**
+     * Fuerza la validación de la fianza omitiendo las discrepancias de la IA.
+     */
+    window.guardarFianzaForzada = function () {
+        const resIA = window.ultimoResultadoFianzaIA;
+        if (!resIA) return;
+
+        Swal.fire({
+            title: '¿Omitir Discrepancias?',
+            text: "Se registrará la fianza como VÁLIDA a pesar de las observaciones detectadas por la IA.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#e11d48',
+            confirmButtonText: 'Sí, Omitir y Guardar',
+            cancelButtonText: 'Cancelar',
+            customClass: { popup: 'rounded-[2rem]' }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                toggleSpinner(true, "Forzando validación...");
+                google.script.run
+                    .withSuccessHandler(function (res) {
+                        toggleSpinner(false);
+                        if (res.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Fianza Forzada con Éxito',
+                                text: 'La fianza ha sido marcada como VÁLIDA.',
+                                confirmButtonColor: '#059669',
+                                customClass: { popup: 'rounded-[2rem]' }
+                            });
+                            cerrarModalFianza();
+                            if (window.vistaActualParams) inicializarContratoDetalle(window.vistaActualParams);
+                        } else {
+                            manejarError(res);
+                        }
+                    })
+                    .withFailureHandler(function (err) {
+                        toggleSpinner(false);
+                        manejarError({ error: err.message, functionName: 'guardarFianzaForzada' });
+                    })
+                    .actualizarFianzaDesdeIA(resIA.idContrato, resIA.tipo, resIA.data, 'forzar');
+            }
+        });
+    };
+
+    window.cerrarModalFianza = function() {
+        document.getElementById('modal-fianza-analisis').classList.add('hidden');
+        // Resetear visualmente para la próxima vez
+        const uploadArea = document.getElementById('fianza-upload-area');
+        const resultsArea = document.getElementById('fianza-resultado-ia');
+        const btnAplicar = document.getElementById('btn-aplicar-fianza');
+        const btnEjecutar = document.getElementById('btn-ejecutar-fianza');
+
+        if(uploadArea) uploadArea.classList.remove('hidden');
+        if(resultsArea) resultsArea.classList.add('hidden');
+        if(btnAplicar) btnAplicar.classList.add('hidden');
+        if(btnEjecutar) btnEjecutar.classList.remove('hidden');
+        
+        window.ultimoResultadoFianzaIA = null;
     };
 
 </script>

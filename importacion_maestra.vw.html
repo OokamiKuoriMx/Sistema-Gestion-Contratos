@@ -54,7 +54,7 @@
                 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 px-2 self-start w-full text-center">
                 Documentos Previos al Procesamiento</h4>
 
-            <div id="batch-queue-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full mb-10">
+            <div id="batch-queue-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 w-full mb-10">
                 <!-- SLOT 1 -->
                 <div id="slot-1"
                     class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative">
@@ -92,6 +92,16 @@
                         class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">
                         4</div>
                     <span class="text-[10px] font-black uppercase text-slate-400 mb-1">Análisis de P.U.</span>
+                    <span class="text-xs font-medium text-slate-300 italic">Esperando archivo...</span>
+                </div>
+
+                <!-- SLOT 5 -->
+                <div id="slot-5"
+                    class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center text-center opacity-60 transition-all relative">
+                    <div
+                        class="w-12 h-12 bg-white rounded-2xl mb-4 flex items-center justify-center text-slate-400 font-black shadow-sm border border-slate-100">
+                        5</div>
+                    <span class="text-[10px] font-black uppercase text-slate-400 mb-1">Fianza</span>
                     <span class="text-xs font-medium text-slate-300 italic">Esperando archivo...</span>
                 </div>
             </div>
@@ -193,6 +203,10 @@
                         stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
                     </svg> 4. Catálogo de Conceptos Creado</li>
+                <li class="flex items-center"><svg class="w-4 h-4 mr-2 text-emerald-500" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                    </svg> 5. Póliza de Fianza Validada</li>
             </ul>
         </div>
 

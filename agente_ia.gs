@@ -34,8 +34,12 @@ REGLA DE ORO (Criterios de Clasificación):
    - Palabras clave: "PROGRAMA DE EROGACIONES", "EJECUCIÓN GENERAL", "CALENDARIO". 
    - ESTRUCTURA: Matriz temporal con columnas para meses/quincenas/semanas y celdas con barras, porcentajes (%) o montos programados.
 
+5. **FIANZA / GARANTÍA**:
+   - Palabras clave: "PÓLIZA DE FIANZA", "AFIANZADORA", "CUMPLIMIENTO", "ANTICIPO", "VICIOS OCULTOS", "INSTITUCIÓN DE SEGUROS Y DE FIANZAS".
+   - ESTRUCTURA: Documento emitido por una afianzadora garantizando una obligación de un contrato específico.
+
 INSTRUCCIÓN: Analiza el contenido y responde ÚNICAMENTE con un JSON con el campo "clase".
-Clases permitidas: 'Contratos', 'CAF', 'Programa', 'Matriz_Insumos' o 'Desconocido'.
+Clases permitidas: 'Contratos', 'CAF', 'Programa', 'Matriz_Insumos', 'Fianza' o 'Desconocido'.
 Ejemplo: {"clase": "Contratos"}
 `;
 
@@ -61,7 +65,7 @@ function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pd
             payload: JSON.stringify(payload)
         };
 
-        const response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_API_KEY, options);
+        const response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" + GEMINI_API_KEY, options);
         const result = JSON.parse(response.getContentText());
         const jsonResponse = JSON.parse(result.candidates[0].content.parts[0].text);
 
@@ -89,29 +93,64 @@ const PROMPT_IMPORTACION_CONTRATOS = `
 Rol y Objetivo:
 Eres un Agente de Inteligencia IA experto en el Sistema de Gestión de Contratos (SGC). Tu misión es procesar documentos de CONTRATO.
 
+REGLAS DE EXTRACCIÓN (CRÍTICO):
+1. **PORCENTAJES**: Extrae los valores como números (ej. 30 para 30%). SI NO APARECEN, ASIGNA 0. NUNCA DEJES ESTOS CAMPOS VACÍOS.
+2. **ESTADO**: Se refiere a la Entidad Federativa de México donde se realiza la obra (ej. "CIUDAD DE MÉXICO", "JALISCO"). NO es el estatus operativo.
+3. **MONTOS**: Extrae los montos totales y de fianzas. Si no hay fianza, el monto es 0.0.
+4. **FECHAS**: Devuelve siempre en formato YYYY-MM-DD.
+
 PASO: EXTRACCIÓN Y SALIDA JSON
-Devuelve ÚNICAMENTE un objeto JSON válido (sin formato Markdown, sin texto adicional).
+Devuelve ÚNICAMENTE un objeto JSON válido.
 
 Estructura requerida:
 {
   "tipo_documento": "CONTRATO",
-  "nivel_confianza": "Alto",
   "datos_extraidos": {
-    "Numero_Contrato": "Clave del contrato (ej. 25-E-CF-...)",
-    "Objeto_Contrato": "Descripción del servicio u obra",
-    "Fecha_Firma": "Fecha de formalización (YYYY-MM-DD)",
-    "Fecha_Inicio_Obra": "Fecha de inicio pactada (YYYY-MM-DD)",
-    "Fecha_Fin_Obra": "Fecha de término pactada (YYYY-MM-DD)",
+    "Numero_Contrato": "Clave del contrato",
+    "Objeto_Contrato": "Descripción",
+    "Estado": "ESTADO DE LA REPÚBLICA (Entidad Federativa)",
+    "Tipo_Contrato": "OBRA PUBLICA / SERVICIOS",
+    "Area_Responsable": "Unidad administrativa",
+    "No_Concurso": "Número de licitación",
+    "Modalidad_Adjudicacion": "Licitación / Invitación / Adjudicación Directa",
+    "Fecha_Adjudicacion": "YYYY-MM-DD",
+    "Fecha_Firma": "YYYY-MM-DD",
+    "Fecha_Inicio_Obra": "YYYY-MM-DD",
+    "Fecha_Fin_Obra": "YYYY-MM-DD",
+    "Plazo_Ejecucion_Dias": 120,
     "Montos": {
-      "Monto_Total_Sin_IVA": 1499787.55,
-      "Monto_Total_Con_IVA": 1739753.56
+      "Monto_Total_Sin_IVA": 0.0,
+      "Monto_Total_Con_IVA": 0.0
+    },
+    "Anticipo": {
+      "pct_Anticipo": 0.0,
+      "Monto_Anticipo": 0.0
+    },
+    "Fianzas": {
+      "Cumplimiento": { "No_Fianza": "N/A", "Monto": 0.0, "pct": 0.0 },
+      "Anticipo": { "No_Fianza": "N/A", "Monto": 0.0, "pct": 0.0 },
+      "Vicios_Ocultos": { "No_Fianza": "N/A", "Monto": 0.0, "pct": 0.0 }
+    },
+    "Retenciones_y_Penas": {
+      "pct_Penas_Convencionales": 0.0,
+      "pct_Retencion_Incumplimiento": 0.0,
+      "Otras_Retenciones_Pct": 0.0
+    },
+    "porcentajes_contrato": {
+      "Pct_Indirectos_Oficina": 0.0,
+      "Pct_Indirectos_Campo": 0.0,
+      "Pct_Indirectos_Totales": 0.0,
+      "Pct_Financiamiento": 0.0,
+      "Pct_Utilidad": 0.0,
+      "Pct_Cargos_SFP": 0.5025,
+      "Pct_ISN": 0.0
     },
     "Contratista": {
-      "Razon_Social": "Nombre de la empresa",
-      "RFC": "RFC con homoclave",
-      "Representante_Legal": "Nombre del representante"
+      "Razon_Social": "Nombre empresa",
+      "RFC": "RFC",
+      "Representante_Legal": "Nombre"
     },
-    "ID_Convenio_Vinculado": "ASIGNAR EL VALOR PROPORCIONADO EN EL CONTEXTO SI EXISTE"
+    "ID_Convenio_Vinculado": "Contexto"
   }
 }
 `;
@@ -162,13 +201,15 @@ Estructura requerida:
   }
 }
 
-NOTAS CRÍTICAS:
-- Extrae TODOS los conceptos del documento, no solo el primero.
-- El "Costo_Directo" de cada concepto es la SUMA de todos los importes de sus insumos (materiales + mano de obra + equipo). NO es el Precio Unitario Total.
-- El "Precio_Unitario_Total" ya incluye el Costo Directo + Indirectos + Utilidad + Financiamiento.
-- Cada concepto tiene su propio array de "insumos" asociados.
-- Los porcentajes de Indirectos, Financiamiento, Utilidad, Cargos SFP e ISN generalmente aparecen en la hoja resumen del análisis, en una tabla de desglose porcentual. Extráelos como decimales (ej. 27.62, no 0.2762).
-- Si algún porcentaje no aparece en el documento, usar 0.
+REGLAS CRÍTICAS DE EXTRACCIÓN Y ANCLAJE (REGLA DE ORO):
+1. **COSTO DIRECTO (CRÍTICO)**: Debes extraer el valor del Costo Directo que aparece en la carátula o resumen de cada concepto. Es la suma antes de indirectos.
+2. **INTEGRIDAD DE INSUMOS**: Extrae el 100% de los insumos listados para cada concepto. No resumas ni omitas ninguno.
+3. **ANCLAJE VERTICAL**: Los documentos de APU suelen tener columnas muy juntas. Imagina una línea vertical que baja desde los encabezados "Unidad", "Costo Unitario" e "Importe". Cualquier número debe estar alineado bajo su respectiva columna.
+4. **DETECCIÓN DE FILAS**: Un insumo termina cuando encuentras una nueva Clave_Insumo o un nuevo Tipo_Insumo. No mezcles descripciones de dos insumos.
+5. **RECONSTRUCCIÓN DE TABLAS**: Si el PDF es de texto plano, utiliza el espaciado de caracteres para identificar dónde termina una columna y empieza la otra.
+6. **INTEGRIDAD**: Extrae TODOS los conceptos del documento, no solo el primero.
+7. **COSTOS**: El "Costo_Directo" de cada concepto es la SUMA de todos los importes de sus insumos si no está explícito. El "Precio_Unitario_Total" incluye además Indirectos y Utilidad.
+8. **PORCENTAJES**: Extráelos como decimales (ej. 27.62). Si no aparecen, usa 0.
 `;
 
 const PROMPT_IMPORTACION_CAF = `
@@ -183,13 +224,52 @@ Estructura requerida:
   "tipo_documento": "CAF",
   "nivel_confianza": "Alto",
   "datos_extraidos": {
-    "Numero_Acuerdo": "Extraer el folio o número del convenio",
-    "Nombre_Fondo": "Nombre del fideicomiso o fondo (ej. FONADIN)",
-    "Monto_Apoyo": 0.0,
+    "Numero_Acuerdo": "Folio o número de acuerdo del convenio (ej. CT/1A-ORD/11-ABRIL-25/X)",
+    "Nombre_Fondo": "Nombre del fondo (ej. FONADIN, BANOBRAS)",
+    "Monto_Apoyo": 250000000.0,
     "Fecha_Firma": "YYYY-MM-DD",
+    "Vigencia_Fin": "YYYY-MM-DD",
+    "Objeto_Programa": "Descripción del objeto o programa",
+    "Estado": "Estado de la República / Ubicación",
     "Entidades_Involucradas": ["BANOBRAS", "SHCP", "..."]
   }
 }
+
+REGLA CRÍTICA:
+- El Número_Acuerdo es el identificador principal. No lo confundas con números de fiduciario (ej. 1936).
+`;
+
+const PROMPT_IMPORTACION_CATALOGO = `
+Rol y Objetivo:
+Eres un Experto en Auditoría de Obra y Presupuestos. Tu misión es extraer el CATÁLOGO DE CONCEPTOS de un documento técnico.
+
+PASO: EXTRACCIÓN Y SALIDA JSON
+Devuelve ÚNICAMENTE un objeto JSON válido.
+
+Estructura requerida:
+{
+  "tipo_documento": "CATALOGO",
+  "nivel_confianza": "Alto",
+  "datos_extraidos": {
+    "conceptos": [
+      {
+        "Clave": "Clave del concepto (ej. PREL-01)",
+        "Descripcion": "Descripción completa del concepto",
+        "Unidad": "Unidad de medida (ej. M2, Lote, Pza)",
+        "Cantidad": 100.50,
+        "Precio_Unitario": 1250.33,
+        "Importe": 125658.16,
+        "Costo_Directo": 1000.00
+      }
+    ]
+  }
+}
+
+REGLAS CRÍTICAS DE LECTURA (ANCLAJE ESPACIAL):
+1. **COSTO DIRECTO**: Extrae el Costo Directo de cada concepto si está disponible. Es vital para la matriz.
+2. **TABLAS DENSAS**: Usa los encabezados "Clave", "Unidad" e "Importe" como anclas verticales.
+3. **INTEGRIDAD**: Extrae TODO el listado. Si el documento tiene múltiples páginas, procésalas todas.
+4. **CONTEXTO**: Ignora logotipos o textos legales en los encabezados/pies de página; enfócate en el cuerpo de la tabla.
 `;
 
 const PROMPT_IMPORTACION_PROGRAMA = `
@@ -209,31 +289,21 @@ Estructura requerida:
       "Fecha_Fin": "YYYY-MM-DD",
       "Plazo_Dias": 90
     },
-    "Periodos_Identificados": [
+    "Periodos_Programados": [
       {
-        "Nombre": "DICIEMBRE 2025",
+        "Nombre_Periodo": "MES AÑO (ej. DICIEMBRE 2025)",
         "Fecha_Inicio": "YYYY-MM-DD",
-        "Fecha_Termino": "YYYY-MM-DD"
-      },
-      {
-        "Nombre": "ENERO 2026",
-        "Fecha_Inicio": "YYYY-MM-DD",
-        "Fecha_Termino": "YYYY-MM-DD"
-      }
-    ],
-    "conceptos_programados": [
-      {
-        "Clave_Concepto": "Clave que se está programando (ej. N3-25-5)",
-        "Descripcion_Limpiada": "Descripción sin saltos de línea",
-        "Unidad": "Unidad original",
-        "Cantidad": 1.00,
-        "Precio_Unitario": 138975.44,
-        "Importe_Total": 138975.44,
-        "avances_por_periodo": [
+        "Fecha_Termino": "YYYY-MM-DD",
+        "Conceptos": [
           {
-            "Nombre_Periodo": "DICIEMBRE 2025",
-            "Porcentaje_Avance": 10.06,
-            "Monto_Periodo": 13980.92
+            "Clave_Concepto": "N3-25-5",
+            "Descripcion_Contextual": "Descripción",
+            "Unidad": "LOTE",
+            "Cantidad": 1.00,
+            "Precio_Unitario": 255011.33,
+            "Importe_Total": 255011.33,
+            "Monto_Periodo": 12750.57,
+            "Porcentaje_Avance": 5.0
           }
         ]
       }
@@ -241,17 +311,12 @@ Estructura requerida:
   }
 }
 
-REGLAS CRÍTICAS DE LECTURA MATRICIAL (¡NO LAS IGNORES!):
-1. Identifica los Encabezados (Columnas): Primero, busca los meses o quincenas que forman las columnas (ej. DICIEMBRE, ENERO, FEBRERO). Estos son tus periodos.
-2. Lectura de Intersecciones (Filas vs Columnas): Lee cada fila de concepto. El documento distribuye los avances (%) y montos ($) a lo largo de las columnas de los meses.
-3. PROHIBICIÓN DE AGRUPAMIENTO: NO asocies todos los importes o porcentajes al último periodo, ni los asumas todos como el "Total". Debes distribuir los valores exactamente en el mes al que pertenecen según el espaciado del documento.
-4. SOLO DELTAS: Solo incluye en avances_por_periodo los periodos donde el concepto tiene actividad real (Porcentaje > 0 o Monto > 0). NO incluyas periodos con valor 0.
-
-NOTAS SOBRE FECHAS DE PERIODOS:
-- Para cada periodo, extrae el rango de fechas EXACTO que aparece en el documento.
-- Si el documento solo muestra meses (ej. "DICIEMBRE 2025"), usa el primer día del mes como Fecha_Inicio y el último día como Fecha_Termino.
-- Si el primer periodo coincide con Fecha_Inicio del contrato, usa esa fecha exacta como inicio del periodo.
-- Si el último periodo coincide con Fecha_Fin del contrato, usa esa fecha exacta como fin del periodo.
+REGLAS CRÍTICAS DE LECTURA MATRICIAL (ANCLAJE DE PERIODOS):
+1. **PERIODO OBLIGATORIO**: El 'Nombre_Periodo' debe ser SIEMPRE el nombre del mes seguido del año (ej. "AGOSTO 2025", "SEPTIEMBRE 2025"). NUNCA lo dejes vacío.
+2. **IDENTIFICACIÓN DE COLUMNAS**: Identifica cada Periodo y agrúpalos como objetos raíces en 'Periodos_Programados'.
+3. **LECTURA VERTICAL**: Para CADA PERIODO, lee hacia abajo. Registra en 'Conceptos' de ese Periodo TODOS los montos y porcentajes asociados alineados verticalmente bajo esa columna.
+4. **INTEGRIDAD POR PERIODO**: Es OBLIGATORIO extraer todos los periodos (desde el primero hasta el último).
+5. **NOMBRES EN MAYÚSCULAS**: Escribe siempre los nombres de los periodos en MAYÚSCULAS.
 `;
 
 const PROMPT_VALIDACION_ESTIMACIONES = `
@@ -302,185 +367,241 @@ Formato de Salida Estricto (JSON):
 /**
  * Función llamada desde el frontend para leer el archivo con Gemini y guardar
  */
-function processDocumentWithAI(base64Data, mimeType, targetTable = null, parentContext = null) {
+function processDocumentWithAI(base64Data, mimeType, targetTable = null, contextJson = null) {
     try {
-        if (parentContext && typeof parentContext === 'string') {
+        let parentContext = contextJson;
+        if (contextJson && typeof contextJson === 'string') {
             try {
-                parentContext = JSON.parse(parentContext);
+                parentContext = JSON.parse(contextJson);
             } catch (e) {
-                console.error("Error parseando parentContext:", e);
+                console.error("Error parseando contextJson:", e);
+                parentContext = null;
             }
         }
 
-        if (!base64Data || !mimeType) {
-            throw new Error("Datos del archivo o MimeType faltantes.");
+        // Permitimos base64Data nulo solo si el objetivo es Fianza (validación de contexto)
+        if (!base64Data && targetTable !== 'Fianza') {
+            throw new Error("Datos del archivo faltantes y no es una validación de contexto de fianza.");
         }
 
         // 1. Preparar payload para Gemini
-        let b64 = base64Data;
-        if (b64.includes('base64,')) {
-            b64 = b64.split('base64,')[1];
+        let b64 = null;
+        if (base64Data) {
+            b64 = base64Data;
+            if (b64.includes('base64,')) {
+                b64 = b64.split('base64,')[1];
+            }
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-        // Seleccionar el System Instruction basado en el objetivo
+        // 2. Seleccionar el Modelo y System Instruction basado en el objetivo (Optimización de Costos)
+        let modelId = "gemini-2.5-flash-lite"; // Nivel Económico (CAF, Otros)
         let systemPrompt = PROMPT_IMPORTACION_CONTRATOS;
+
         if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') {
             systemPrompt = PROMPT_IMPORTACION_MATRICES;
+            modelId = "gemini-3.1-flash-lite-preview"; // Nivel Eficiente (Performance)
         } else if (targetTable === 'Estimaciones' || targetTable === 'Facturas') {
             systemPrompt = PROMPT_VALIDACION_ESTIMACIONES;
+            modelId = "gemini-2.5-flash-lite"; // Nivel Económico
         } else if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') {
             systemPrompt = PROMPT_IMPORTACION_CAF;
+            modelId = "gemini-2.5-flash-lite"; // Nivel Económico
         } else if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') {
             systemPrompt = PROMPT_IMPORTACION_PROGRAMA;
+            modelId = "gemini-3.1-flash-lite-preview"; // Nivel Eficiente
+        } else if (targetTable === 'Catalogo_Conceptos' || targetTable === 'CATALOGO') {
+            systemPrompt = PROMPT_IMPORTACION_CATALOGO;
+            modelId = "gemini-3.1-flash-lite-preview"; // Nivel Eficiente
+        } else if (targetTable === 'Fianza' || targetTable === 'Contratos') {
+            systemPrompt = targetTable === 'Fianza' ? PROMPT_VALIDACION_FIANZA : PROMPT_IMPORTACION_CONTRATOS;
+            modelId = "gemini-3.1-pro-preview"; // Nivel Inteligencia (Crítico)
         }
 
-        let promptAdicional = `Lee este archivo oficial. Debes generar estrictamente un objeto JSON estructurado con arrays para las tablas correspondientes basándote en la información encontrada.`;
-        if (targetTable) {
-            promptAdicional += `\n\nATENCIÓN: El usuario subió este documento desde el contexto de la tabla '${targetTable}'.`;
-            if (parentContext) {
-                promptAdicional += `\n\nCONTEXTO ADICIONAL: El registro padre tiene esta información: ${JSON.stringify(parentContext)}. Asegúrate de usar estos IDs para vincular los registros hijo que encuentres.`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`;
 
-                // INYECCIÓN DEL LINK DE SHAREPOINT
+        // 3. Construir prompt adicional con contexto dinámico
+        let promptAdicional = `Lee este archivo oficial. Debes extraer los datos en formato JSON basado en el esquema solicitado.`;
+        if (targetTable) {
+            promptAdicional += `\n\nATENCIÓN: El documento se carga para la tabla '${targetTable}'.`;
+
+            if (targetTable === 'Fianza') {
+                try {
+                    const modeloHtml = HtmlService.createHtmlOutputFromFile('modeloFianza').getContent();
+                    promptAdicional += `\n\nCONTEXTO CRÍTICO (MODELO OFICIAL DEL DOF):\n${modeloHtml}`;
+                } catch (e) {
+                    console.error("Error cargando modeloFianza:", e);
+                }
+            }
+
+            if (parentContext) {
+                promptAdicional += `\n\nCONTEXTO REGISTRO PADRE: ${JSON.stringify(parentContext)}`;
+
                 if (parentContext.Link_Sharepoint) {
-                    promptAdicional += `\nINSTRUCCIÓN OBLIGATORIA: Asigna este enlace '${parentContext.Link_Sharepoint}' al campo 'Link_Sharepoint' de todos los registros extraídos.`;
+                    promptAdicional += `\nINSTRUCCIÓN: Usa el link '${parentContext.Link_Sharepoint}' para el campo 'Link_Sharepoint'.`;
                 }
 
-                // Si es matrices, pasar el catálogo actual para matching por descripción
+                // Contexto para Matrices: Catálogo Actual
                 if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') {
-                    const idContrato = parentContext.ID_Contrato || parentContext.idContrato;
-                    if (idContrato) {
-                        const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContrato });
-                        if (catalogo && catalogo.length > 0) {
-                            promptAdicional += `\n\nIMPORTANTE - CATÁLOGO EXISTENTE: A continuación se listan los conceptos que YA ESTÁN en la base de datos para este contrato. 
-                            SI la descripción del concepto en el documento coincide contextualmente con alguno de estos, USA SU ID_Concepto Y CLAVE ORIGINAL. NO inventes nuevas claves si puedes hacer match.
-                            Catálogo actual: ${JSON.stringify(catalogo.map(c => ({ ID_Concepto: c.ID_Concepto, Clave: c.Clave, Descripcion: c.Descripcion })))}`;
+                    const idCont = parentContext.ID_Contrato || parentContext.idContrato;
+                    if (idCont) {
+                        const cat = dbSelect('Catalogo_Conceptos', { ID_Contrato: idCont });
+                        if (cat && cat.length > 0) {
+                            promptAdicional += `\n\nCATÁLOGO ACTUAL PARA MATCHING: ${JSON.stringify(cat.map(c => ({ ID_Concepto: c.ID_Concepto, Clave: c.Clave, Descripcion: c.Descripcion })))}`;
                         }
                     }
                 }
 
-                // Si es estimación, pasar los datos actuales de la estimación para comparativa
-                if (targetTable === 'Estimaciones' && parentContext.ID_Estimacion) {
-                    const estActual = dbSelect('Estimaciones', { ID_Estimacion: parentContext.ID_Estimacion });
-                    if (estActual && estActual.length > 0) {
-                        const detalleActual = dbSelect('Detalle_Estimacion', { ID_Estimacion: parentContext.ID_Estimacion });
-                        promptAdicional += `\n\nDATOS ACTUALES EN SISTEMA PARA ESTA ESTIMACIÓN (O BORRADOR):
-                        Carátula: ${JSON.stringify(estActual[0])}
-                        Conceptos ya registrados: ${JSON.stringify(detalleActual.map(d => ({ ID_Concepto: d.ID_Concepto, Cantidad: d.Cantidad_Estimada_Periodo })))}
-                        INSTRUCCIÓN: Compara los datos del documento contra estos datos del sistema. Si hay discrepancias matemáticas o de cantidades, repórtalo en el informe_auditoria.`;
+                // Contexto para Estimaciones/Facturas
+                if ((targetTable === 'Estimaciones' || targetTable === 'Facturas') && parentContext.ID_Estimacion) {
+                    const est = dbSelect('Estimaciones', { ID_Estimacion: parentContext.ID_Estimacion });
+                    if (est && est.length > 0) {
+                        const det = dbSelect('Detalle_Estimacion', { ID_Estimacion: parentContext.ID_Estimacion });
+                        promptAdicional += `\n\nDATOS SISTEMA (ESTIMACIÓN): ${JSON.stringify(est[0])}\nCONCEPTOS YA REGISTRADOS: ${JSON.stringify(det.map(d => ({ ID_Concepto: d.ID_Concepto, Cantidad: d.Cantidad_Estimada_Periodo })))}`;
 
-                        // NUEVO: Inyección de Auditoría Previa (Checklist Histórico)
-                        const valsPrevias = dbSelect('Validacion_Archivos', { ID_Estimacion: parentContext.ID_Estimacion });
-                        if (valsPrevias && valsPrevias.length > 0) {
-                            // Tomar la más reciente
-                            const ultimaVal = valsPrevias[valsPrevias.length - 1];
-                            if (ultimaVal.Checklist_JSON) {
-                                try {
-                                    const checklistHist = JSON.parse(ultimaVal.Checklist_JSON);
-                                    promptAdicional += `\n\nCONTEXTO_AUDITORIA_PREVIA: Ya se han validado rubros anteriormente. Mantén los rubros aprobados si el documento actual no los contradice: ${JSON.stringify(checklistHist)}`;
-                                } catch (e) {
-                                    console.error("Error parseando checklist histórico:", e);
-                                }
+                        const vals = dbSelect('Validacion_Archivos', { ID_Estimacion: parentContext.ID_Estimacion });
+                        if (vals && vals.length > 0) {
+                            const lastVal = vals[vals.length - 1];
+                            if (lastVal.Checklist_JSON) {
+                                promptAdicional += `\n\nCONTEXTO_AUDITORIA_PREVIA (PRESERVA APROBADOS): ${lastVal.Checklist_JSON}`;
                             }
                         }
+                    }
+                }
 
-                        // NUEVO: Validación de Convenio (CAF) y Suficiencia de Pago
-                        const cont = dbSelect('Contratos', { ID_Contrato: parentContext.ID_Contrato });
-                        if (cont && cont.length > 0) {
-                            const idConv = cont[0].ID_Convenio_Vinculado;
-                            if (idConv) {
-                                const convenio = dbSelect('Convenio_Recurso', { ID_Convenio: idConv });
-                                if (convenio && convenio.length > 0) {
-                                    promptAdicional += `\n\nDATOS DE CAF (CONVENIO): Existe un convenio vinculado (${convenio[0].Numero_Acuerdo}) con monto ${convenio[0].Monto_Apoyo}. 
-                                    INSTRUCCIÓN: Valida el rubro 'Convenio de Aportación Financiera (CAF)' como true.`;
-
-                                    // Para este sistema, el Convenio de Recurso también actúa como Suficiencia de Pago si existe.
-                                    promptAdicional += `\nINSTRUCCIÓN: Valida el rubro 'Suficiencia de Pago (Autorización)' como true basándote en la existencia del CAF.`;
-                                } else {
-                                    promptAdicional += `\n\nALERTA: El contrato tiene un ID_Convenio (${idConv}) pero no se encontró el registro en Convenios_Recurso.`;
-                                }
-                            } else {
-                                promptAdicional += `\n\nALERTA DE AUDITORÍA: El contrato NO tiene un Convenio de Aportación (CAF) ni Suficiencia de Pago vinculada.
-                                INSTRUCCIÓN: Los rubros 'Convenio de Aportación Financiera (CAF)' y 'Suficiencia de Pago (Autorización)' DEBEN ser marcados como false con la observación 'No existe convenio de aportación o autorización vinculada al contrato'.`;
+                // Contexto para Programa (Periodos y Conceptos)
+                if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') {
+                    const idCont = parentContext.ID_Contrato || parentContext.idContrato;
+                    if (idCont) {
+                        const prog = dbSelect('Programa', { ID_Contrato: idCont });
+                        if (prog && prog.length > 0) {
+                            const idProg = prog[0].ID_Numero_Programa;
+                            const pers = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProg });
+                            if (pers && pers.length > 0) {
+                                promptAdicional += `\n\nPERIODOS EXISTENTES (USA EXACTAMENTE ESTOS NOMBRES): ${JSON.stringify(pers.map(p => ({ Nombre: p.Periodo, Inicio: p.Fecha_Inicio, Fin: p.Fecha_Termino || p.Fecha_Fin })))}`;
                             }
+                        }
+                        const cat = dbSelect('Catalogo_Conceptos', { ID_Contrato: idCont });
+                        if (cat && cat.length > 0) {
+                            promptAdicional += `\n\nCATÁLOGO PARA MATCHING DE PROGRAMA: ${JSON.stringify(cat.map(c => ({ Clave: c.Clave, Descripcion: c.Descripcion })))}`;
                         }
                     }
                 }
             }
         }
+
+        const parts = [];
+        if (b64) {
+            parts.push({ inlineData: { mimeType: mimeType || 'application/pdf', data: b64 } });
+        }
+        parts.push({ text: promptAdicional });
 
         const payload = {
-            system_instruction: {
-                parts: [{ text: systemPrompt }]
-            },
-            contents: [
-                {
-                    parts: [
-                        {
-                            inlineData: {
-                                mimeType: mimeType,
-                                data: b64
-                            }
-                        },
-                        {
-                            text: promptAdicional
-                        }
-                    ]
-                }
-            ],
-            generationConfig: {
-                temperature: 0.0,
-                responseMimeType: "application/json"
-            }
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ parts: parts }],
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
         };
 
-        const options = {
+        const response = UrlFetchApp.fetch(url, {
             method: "post",
             contentType: "application/json",
             payload: JSON.stringify(payload),
             muteHttpExceptions: true
-        };
+        });
 
-        // 2. Enviar a Gemini API usando el servicio REST de Apps Script
-        const response = UrlFetchApp.fetch(url, options);
-        const resultText = response.getContentText();
-        const resultJson = JSON.parse(resultText);
-
+        const resultJson = JSON.parse(response.getContentText());
         if (response.getResponseCode() !== 200) {
-            throw new Error("HTTP " + response.getResponseCode() + " - " + (resultJson.error?.message || resultText));
+            throw new Error(`Gemini Error ${response.getResponseCode()}: ${resultJson.error?.message || response.getContentText()}`);
         }
 
-        // 3. Extraer respuesta (Es JSON texto, así que hay que parsearlo)
-        const llmJsonString = resultJson.candidates[0].content.parts[0].text;
-        let extraction = JSON.parse(llmJsonString.replace(/```json/g, '').replace(/```/g, '').trim());
+        const llmString = resultJson.candidates[0].content.parts[0].text;
 
-        // LÓGICA REGLA DE ORO: Extraer datos_extraidos si existe el wrapper
-        let datosFinales = extraction.datos_extraidos || extraction.datos || extraction;
+        // --- LOG PROVISIONAL DE EXTRACCIÓN ---
+        console.log("RAW_AI_EXTRACTION [" + (targetTable || "GENERAL") + "]:", llmString);
 
-        // Formatear para el orquestador frontend
-        const respuestaFormateada = {
-            accion: (targetTable === 'Estimaciones' || targetTable === 'Facturas') ? "auditoria_validación" : "importar_datos",
+        const extraction = JSON.parse(llmString.replace(/```json/g, '').replace(/```/g, '').trim());
+        const datosFinales = extraction.datos_extraidos || extraction.datos || extraction;
+
+        const resFormateada = {
+            success: true,
+            accion: (targetTable === 'Estimaciones' || targetTable === 'Facturas') ? "auditoria_validación" : (targetTable === 'Fianza' ? "auditoria_fianza" : "importar_datos"),
             datos: datosFinales,
-            tipo_documento: extraction.tipo_documento || "DESCONOCIDO", // De la Regla de Oro
+            datos_extraidos: datosFinales, // Añadido para compatibilidad
+            tipo_documento: targetTable === 'Fianza' ? 'FIANZA' : (extraction.tipo_documento || "DESCONOCIDO"),
             nivel_confianza: extraction.nivel_confianza || "Bajo",
-            parentContext: parentContext // Preservar para el guardado
+            parentContext: parentContext,
+            checklist_auditoria: extraction.checklist_auditoria || null,
+            informe_auditoria: extraction.informe_auditoria || null,
+            estado_global: extraction.estado_global || null
         };
 
-        // Si es auditoría, preservar el checklist
-        if (extraction.checklist_auditoria) {
-            respuestaFormateada.checklist_auditoria = extraction.checklist_auditoria;
-            respuestaFormateada.informe_auditoria = extraction.informe_auditoria;
-            respuestaFormateada.estado_global = extraction.estado_global;
+        if (targetTable === 'Fianza' && extraction.validacion) {
+            resFormateada.validacion = extraction.validacion;
+            resFormateada.tipo_identificado = extraction.tipo_identificado;
         }
 
-        return generarRespuesta(true, respuestaFormateada);
+        return generarRespuesta(true, resFormateada);
 
     } catch (e) {
-        console.error(e);
+        console.error("Error en processDocumentWithAI:", e);
         return generarRespuesta(false, e.toString(), 'processDocumentWithAI');
     }
 }
+
+
+const PROMPT_VALIDACION_FIANZA = `
+### ROL: Perito Legal SGC (Especialista en Fianzas Gubernamentales)
+Tu misión es realizar un peritaje técnico y legal comparando la Póliza de Fianza proporcionada contra el "Modelo Oficial del DOF" (modeloFianza.html) y los "Datos del Contrato" de nuestro sistema.
+
+### RECURSOS DISPONIBLES EN EL CONTEXTO:
+1. **Archivo Adjunto:** La imagen o PDF de la póliza de fianza.
+2. **Modelo Oficial (DOF):** Contenido en modeloFianza.html. 
+   - **Ley Aplicable:** Verifica en 'parentContext.Ley_Aplicable' si es LOPSRM (Obras) o LAASSP (Adquisiciones).
+   - **Articulado:** 
+     - Si es LOPSRM: Los artículos de la LISF aplicables suelen ser 279 (Entidades) o 282 (Dependencias). La fianza DEBE citar la 'Ley de Obras Públicas y Servicios Relacionados con las Mismas'.
+     - Si es LAASSP: La fianza DEBE citar la 'Ley de Adquisiciones, Arrendamientos y Servicios del Sector Público'.
+3. **Datos del Sistema (parentContext):** Contiene la información oficial (RFCs, Montos, Ley).
+
+### PASO 1: Validación Contextual y Legal (LEY Y ARTICULADO)
+- **Cruce de Ley:** Verifica que el cuerpo de la fianza cite la ley correcta indicada en 'parentContext.Ley_Aplicable'. Es un error crítico citar la ley de adquisiciones en un contrato de obra.
+- **Fiado (Contratista):** Coincidencia exacta con "Contratista_Razon_Social" y "Contratista_RFC".
+- **Monto de la Fianza:** 
+  - Si es CUMPLIMIENTO: Verifica contra "Monto_Esperado_Garantia".
+  - Si es ANTICIPO: Debe ser el 100% del anticipo ("Monto_Esperado_Garantia").
+
+### PASO 2: Validación de Cláusulas (MODELO DOF)
+- **Vigencia:** Debe ser indeterminada hasta cumplimiento total.
+- **Indivisibilidad:** Obligatorio mencionar que la garantía es indivisible.
+- **Suspensión:** Verifica que la cláusula de suspensión coincida con el texto del modelo DOF para la ley específica (LOPSRM o LAASSP).
+
+### OUTPUT JSON REQUERIDO:
+{
+  "tipo_identificado": "Cumplimiento / Anticipo - [Ley Detectada]",
+  "datos_extraidos": {
+    "num_fianza": "Póliza-12345",
+    "monto_documento": 123456.78,
+    "monto_esperado_system": 0.00,
+    "ley_citada_en_documento": "Texto detectado",
+    "nombre_afianzadora": "Nombre de la Institución Afianzadora",
+    "pct_fianza_documento": 10.0
+  },
+  "validacion": {
+    "estatus": "VALIDA" | "RECHAZADA",
+    "checklist": [
+      {
+        "criterio": "Cruce de Ley Aplicable",
+        "pasa": true,
+        "observacion": "Cita correctamente la LOPSRM."
+      },
+      {
+        "criterio": "Articulado LISF",
+        "pasa": false,
+        "observacion": "Cita el Art. 279 pero por ser Dependencia debería citar el 282."
+      }
+    ],
+    "resumen_critico": "Resumen técnico indicando la validez legal y el apego al modelo oficial de la ley correspondiente."
+  }
+}
+`;
 
 /**
  * Función auxiliar para insertar y actualizar los datos en las pestañas como hace el webhook.
@@ -495,6 +616,10 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
     // El objeto puede venir directo o envuelto por processDocumentWithAI
     const datos = respuestaIA.datos || respuestaIA;
     const tipo = respuestaIA.tipo_documento || "DESCONOCIDO";
+
+    // --- LOG DE GUARDADO ---
+    console.log("DETALLES_GUARDADO_IA [" + tipo + "]:", JSON.stringify(datos));
+
     let resultados = { insertados: 0, actualizados: 0, ids: {} };
 
     // Jerarquía de inserción (Padres primero, Hijos después) para resolver llaves foráneas
@@ -520,6 +645,16 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
     // Si los datos vienen en el formato anidado de la Regla de Oro, los "aplanamos" o movemos a las llaves que espera guardarDatosIA
     if (tipo === 'CONTRATO') {
         const c = datos; // datos ya es datos_extraidos
+
+        // Helper para escalar porcentajes (IA devuelve 30 para 30%, guardamos 30)
+        const scalePct = (val) => {
+            let n = parseFloat(val);
+            if (isNaN(n)) return 0;
+            // Si el valor ya es una fracción (ej. 0.3), lo llevamos a entero (30)
+            // Si es > 1 (ej. 30), asumimos que ya es entero y lo dejamos tal cual
+            return (n > 0 && n <= 1) ? n * 100 : n;
+        };
+
         const contratista = {
             Razon_Social: c.Contratista?.Razon_Social,
             RFC: c.Contratista?.RFC,
@@ -528,17 +663,63 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
         const contrato = {
             Numero_Contrato: c.Numero_Contrato,
             Objeto_Contrato: c.Objeto_Contrato,
+            Estado: c.Estado || 'CDMX', // Ahora es ubicación geográfica
+            Tipo_Contrato: c.Tipo_Contrato,
+            Area_Responsable: c.Area_Responsable,
+            No_Concurso: c.No_Concurso,
+            Modalidad_Adjudicacion: c.Modalidad_Adjudicacion,
+            Fecha_Adjudicacion: c.Fecha_Adjud_acion || c.Fecha_Adjudicacion,
             Fecha_Firma: c.Fecha_Firma,
             Fecha_Inicio_Obra: c.Fecha_Inicio_Obra,
             Fecha_Fin_Obra: c.Fecha_Fin_Obra,
+            Plazo_Ejecucion_Dias: c.Plazo_Ejecucion_Dias,
             Monto_Total_Sin_IVA: c.Montos?.Monto_Total_Sin_IVA,
             Monto_Total_Con_IVA: c.Montos?.Monto_Total_Con_IVA,
-            ID_Convenio_Vinculado: idConvenioVinculado || c.ID_Convenio_Vinculado
+            ID_Convenio_Vinculado: idConvenioVinculado || c.ID_Convenio_Vinculado,
+            ID_Contratista: c.ID_Contratista || datos.ID_Contratista,
+            // Anticipo
+            pct_Anticipo: scalePct(c.Anticipo?.pct_Anticipo || c.pct_Anticipo),
+            Monto_Anticipo: c.Anticipo?.Monto_Anticipo || c.Monto_Anticipo || 0,
+            No_Fianza_Anticipo: c.Fianzas?.Anticipo?.No_Fianza || c.No_Fianza_Anticipo,
+            // Cumplimiento
+            pct_Cumplimiento: scalePct(c.Fianzas?.Cumplimiento?.pct),
+            Monto_Fianza_Cumplimiento: c.Fianzas?.Cumplimiento?.Monto || 0,
+            No_Fianza_Cumplimiento: c.Fianzas?.Cumplimiento?.No_Fianza || c.No_Fianza_Cumplimiento,
+            // Vicios Ocultos
+            pct_Vicios_Ocultos: scalePct(c.Fianzas?.Vicios_Ocultos?.pct),
+            No_Fianza_Vicios_Ocultos: c.Fianzas?.Vicios_Ocultos?.No_Fianza,
+            Monto_Fianza_Vicios_Ocultos: c.Fianzas?.Vicios_Ocultos?.Monto,
+            // Indirectos y Otros (Sobrecostos escalados)
+            Pct_Indirectos_Oficina: scalePct(c.porcentajes_contrato?.Pct_Indirectos_Oficina),
+            Pct_Indirectos_Campo: scalePct(c.porcentajes_contrato?.Pct_Indirectos_Campo),
+            Pct_Indirectos_Totales: scalePct(c.porcentajes_contrato?.Pct_Indirectos_Totales),
+            Pct_Financiamiento: scalePct(c.porcentajes_contrato?.Pct_Financiamiento),
+            Pct_Utilidad: scalePct(c.porcentajes_contrato?.Pct_Utilidad),
+            Pct_Cargos_SFP: scalePct(c.porcentajes_contrato?.Pct_Cargos_SFP),
+            Pct_ISN: scalePct(c.porcentajes_contrato?.Pct_ISN),
+            // Penas y Retenciones
+            pct_Penas_Convencionales: scalePct(c.Retenciones_y_Penas?.pct_Penas_Convencionales),
+            pct_Retencion_Incumplimiento: scalePct(c.Retenciones_y_Penas?.pct_Retencion_Incumplimiento),
+            Otras_Retenciones_Pct: scalePct(c.Retenciones_y_Penas?.Otras_Retenciones_Pct),
+            Link_Sharepoint: c.Link_Sharepoint
         };
         datos.Contratistas = [contratista];
         datos.Contratos = [contrato];
     } else if (tipo === 'CAF') {
-        datos.Convenios_Recurso = [datos];
+        datos.Convenios_Recurso = [{
+            Numero_Acuerdo: datos.Numero_Acuerdo,
+            Nombre_Fondo: datos.Nombre_Fondo,
+            Monto_Apoyo: datos.Monto_Apoyo,
+            Fecha_Firma: datos.Fecha_Firma,
+            Vigencia_Fin: datos.Vigencia_Fin,
+            Objeto_Programa: datos.Objeto_Programa,
+            Estado: datos.Estado,
+            Link_Sharepoint: datos.Link_Sharepoint
+        }];
+    } else if (tipo === 'CATALOGO') {
+        if (datos.conceptos && Array.isArray(datos.conceptos)) {
+            datos.Catalogo_Conceptos = datos.conceptos;
+        }
     } else if (tipo === 'PROGRAMA') {
         // Mapear Programa
         datos.Programa = [{
@@ -548,44 +729,75 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             Fecha_Termino: datos.Fechas_Generales?.Fecha_Fin || null,
             Plazo_Ejecucion_Dias: datos.Fechas_Generales?.Plazo_Dias || null
         }];
-        // Períodos (ahora vienen como objetos con Nombre, Fecha_Inicio, Fecha_Termino)
-        if (datos.Periodos_Identificados) {
-            datos.Programa_Periodo = datos.Periodos_Identificados.map((p, i) => {
-                // Soportar formato viejo (string) y nuevo (objeto)
-                const esObjeto = typeof p === 'object';
-                return {
-                    Numero_Periodo: i + 1,
-                    Periodo: esObjeto ? p.Nombre : p,
-                    Fecha_Inicio: esObjeto ? p.Fecha_Inicio : null,
-                    Fecha_Termino: esObjeto ? p.Fecha_Termino : null
+        // Períodos y Conceptos (NUEVO FORMATO ORIENTADO A PERIODOS)
+        if (datos.Periodos_Programados) {
+            datos.Programa_Periodo = [];
+            datos.Programa_Ejecucion = [];
+
+            const conceptosUnicos = {};
+
+            datos.Periodos_Programados.forEach((per, idx) => {
+                const nombrePer = String(per.Nombre_Periodo || "").trim().toUpperCase();
+
+                // 1. Guardar Periodo
+                const perObj = {
+                    Numero_Periodo: idx + 1,
+                    Periodo: nombrePer,
+                    Fecha_Inicio: per.Fecha_Inicio,
+                    Fecha_Termino: per.Fecha_Termino || per.Fecha_Fin
                 };
+                datos.Programa_Periodo.push(perObj);
+
+                // 2. Procesar Conceptos del Periodo
+                if (per.Conceptos && Array.isArray(per.Conceptos)) {
+                    per.Conceptos.forEach(cp => {
+                        // Rescatar concepto único para Catálogo_Conceptos si no existe
+                        if (cp.Clave_Concepto && !conceptosUnicos[cp.Clave_Concepto]) {
+                            conceptosUnicos[cp.Clave_Concepto] = {
+                                Clave: cp.Clave_Concepto,
+                                Descripcion: cp.Descripcion_Contextual || cp.Descripcion_Limpiada || "N/A",
+                                Unidad: cp.Unidad || "SRV",
+                                Cantidad_Contratada: cp.Cantidad || 1,
+                                Precio_Unitario: cp.Precio_Unitario || null,
+                                Importe_Total_Sin_IVA: cp.Importe_Total || 0
+                            };
+                        }
+
+                        // SOLO DELTAS: no registrar actividad en cero
+                        const monto = parseFloat(cp.Monto_Periodo) || 0;
+                        const pct = parseFloat(cp.Porcentaje_Avance) || 0;
+                        if (monto === 0 && pct === 0) return;
+
+                        // NUEVO: Registrar Programa_Ejecucion INYECTANDO Fechas del Periodo
+                        datos.Programa_Ejecucion.push({
+                            Clave_Concepto_Temp: cp.Clave_Concepto,
+                            Descripcion_Temp: cp.Descripcion_Contextual || cp.Descripcion_Limpiada,
+                            Periodo_Temp: nombrePer,
+                            Fecha_Inicio: per.Fecha_Inicio,
+                            Fecha_Fin: per.Fecha_Termino,
+                            Monto_Programado: cp.Monto_Periodo,
+                            Avance_Programado_Pct: cp.Porcentaje_Avance
+                        });
+                    });
+                }
             });
-        }
-        // Conceptos y Ejecución
-        if (datos.conceptos_programados) {
-            datos.Catalogo_Conceptos = datos.conceptos_programados.map(cp => ({
-                Clave: cp.Clave_Concepto,
-                Descripcion: cp.Descripcion_Limpiada,
-                Unidad: cp.Unidad,
-                Cantidad_Contratada: cp.Cantidad || 1,
-                Precio_Unitario: cp.Precio_Unitario || null,
-                Importe_Total_Sin_IVA: cp.Importe_Total
-            }));
-            // La ejecución requiere IDs de período, se manejará en el loop de jerarquía
+
+            // Reconstruir Catálogo de Conceptos uniendo todos los rescatados
+            datos.Catalogo_Conceptos = Object.values(conceptosUnicos);
+
+        } else if (datos.Periodos_Identificados && datos.conceptos_programados) {
+            // LOGICA VIEJA (Por retrocompatibilidad si la IA aún devuelve el formato anterior)
+            datos.Programa_Periodo = datos.Periodos_Identificados.map((p, i) => {
+                const esObjeto = typeof p === 'object';
+                return { Numero_Periodo: i + 1, Periodo: (esObjeto ? p.Nombre : p).trim().toUpperCase(), Fecha_Inicio: esObjeto ? p.Fecha_Inicio : null, Fecha_Termino: esObjeto ? p.Fecha_Termino : null };
+            });
+            datos.Catalogo_Conceptos = datos.conceptos_programados.map(cp => ({ Clave: cp.Clave_Concepto, Descripcion: cp.Descripcion_Limpiada, Unidad: cp.Unidad, Cantidad_Contratada: cp.Cantidad || 1, Precio_Unitario: cp.Precio_Unitario || null, Importe_Total_Sin_IVA: cp.Importe_Total }));
             datos.Programa_Ejecucion = [];
             datos.conceptos_programados.forEach(cp => {
                 cp.avances_por_periodo?.forEach(av => {
-                    // SOLO DELTAS: no registrar periodos sin actividad
-                    const monto = parseFloat(av.Monto_Periodo) || 0;
-                    const pct = parseFloat(av.Porcentaje_Avance) || 0;
-                    if (monto === 0 && pct === 0) return;
-
-                    datos.Programa_Ejecucion.push({
-                        Clave_Concepto_Temp: cp.Clave_Concepto,
-                        Periodo_Temp: av.Nombre_Periodo,
-                        Monto_Programado: av.Monto_Periodo,
-                        Avance_Programado_Pct: av.Porcentaje_Avance
-                    });
+                    const monto = parseFloat(av.Monto_Periodo) || 0; const pct = parseFloat(av.Porcentaje_Avance) || 0; if (monto === 0 && pct === 0) return;
+                    let nombrePer = String(av.Nombre_Periodo || "").trim().toUpperCase();
+                    datos.Programa_Ejecucion.push({ Clave_Concepto_Temp: cp.Clave_Concepto, Periodo_Temp: nombrePer, Monto_Programado: av.Monto_Periodo, Avance_Programado_Pct: av.Porcentaje_Avance });
                 });
             });
         }
@@ -652,6 +864,42 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                 }];
             }
         }
+    } else if (tipo === 'FIANZA') {
+        const estatusValidacion = respuestaIA.validacion?.estatus || 'RECHAZADA';
+        const detalles = respuestaIA.validacion?.diferencias_encontradas?.join(', ') || '';
+
+        let contratoFianza = {
+            Numero_Contrato: datos.contrato || datos.Numero_Contrato
+        };
+
+        if (estatusValidacion === 'VALIDA') {
+            contratoFianza["Fianza_Numero"] = datos.num_fianza;
+            contratoFianza["Fianza_Estatus"] = "Validada conforme a DOF";
+
+            // Asignar los campos en BD según el tipo identificado por la IA
+            const tIdent = (respuestaIA.tipo_identificado || "").toLowerCase();
+            if (tIdent.includes("anticipo")) {
+                contratoFianza["No_Fianza_Anticipo"] = datos.num_fianza;
+                contratoFianza["Monto_Anticipo"] = datos.monto || datos.monto_documento;
+            } else if (tIdent.includes("cumplimiento")) {
+                contratoFianza["No_Fianza_Cumplimiento"] = datos.num_fianza;
+                contratoFianza["Monto_Fianza_Cumplimiento"] = datos.monto || datos.monto_documento;
+            } else if (tIdent.includes("vicio")) {
+                contratoFianza["No_Fianza_Vicios_Ocultos"] = datos.num_fianza;
+                contratoFianza["Monto_Fianza_Vicios_Ocultos"] = datos.monto || datos.monto_documento;
+            }
+        } else {
+            contratoFianza["Fianza_Estatus"] = "Rechazada (" + detalles.slice(0, 100) + "...)";
+        }
+
+        // Si hay un contexto padre forzado, usarlo
+        let pCtxF = respuestaIA.parentContext;
+        if (typeof pCtxF === 'string') { try { pCtxF = JSON.parse(pCtxF); } catch (e) { } }
+        if (pCtxF && pCtxF.ID_Contrato) {
+            contratoFianza.ID_Contrato = pCtxF.ID_Contrato;
+        }
+
+        datos.Contratos = [contratoFianza];
     }
 
     // --- RESOLUCIÓN GLOBAL DE CONTRATO DESDE LA RAÍZ ---
@@ -660,7 +908,8 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
         try { pContext = JSON.parse(pContext); } catch (e) { pContext = null; }
     }
 
-    let globalIdContrato = respuestaIA.ID_Contrato_Contexto || (pContext ? pContext.ID_Contrato : null);
+    let globalIdContrato = respuestaIA.ID_Contrato_Contexto || 
+                           (pContext ? (pContext.ID_Contrato || pContext.idContrato || pContext.id_contrato) : null);
 
     // Si aún no hay ID global pero la IA extrajo un Numero_Contrato o ID_Contrato, buscarlo o crearlo
     const needleText = datos.Numero_Contrato || datos.ID_Contrato || (datos.Contrato && typeof datos.Contrato === 'string' ? datos.Contrato : null);
@@ -686,6 +935,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
     // Mapa de traducción de IDs: Si la IA generó un "ID_Contrato": "temp_1", y dbInsert le asignó el entero 15, guardamos { "temp_1": 15 }
     const mapaIds = {};
     const ultimosIdsInsertados = {}; // Para linking automático de hijos sin ID temporal
+    const mapaPeriodosReales = {}; // NUEVO: Para vincular periodos por nombre sin usar IDs temporales
     if (globalIdContrato) {
         ultimosIdsInsertados['Contratos'] = globalIdContrato;
     }
@@ -745,9 +995,144 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                         }
                     });
 
+                    // --- RESOLUCIÓN DE TEMPORALES Y LINKS JERÁRQUICOS ---
+                    const idContratoContextoActual = resultados.ids['Contratos'] || globalIdContrato;
+
+                    if (tabla === 'Matriz_Insumos') {
+                        // Cruzar para obtener el ID_Concepto real desde la base de datos usando la Clave
+                        if (!registro.ID_Concepto && (registro.Clave_Concepto_Padre || registro.Clave_Padre)) {
+                            const clavePadre = (registro.Clave_Concepto_Padre || registro.Clave_Padre).toString().trim();
+                            if (idContratoContextoActual) {
+                                // Búsqueda insensible a mayúsculas/minúsculas para mayor robustez
+                                const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoContextoActual });
+                                const conMatch = catalogo.find(c => String(c.Clave).trim().toUpperCase() === clavePadre.toUpperCase());
+                                if (conMatch) {
+                                    registro.ID_Concepto = conMatch.ID_Concepto;
+                                }
+                            }
+                        }
+                        // Limpiar campos temporales que no existen en el esquema
+                        delete registro.Clave_Concepto_Padre;
+                        delete registro.Clave_Padre;
+                        delete registro.ID_Contrato; // No existe en esquema Matriz_Insumos
+                    }
+                    if (tabla === 'Programa_Ejecucion') {
+                        // 1. Resolver ID_Concepto (Doble Match: Clave + Descripción)
+                        if (!registro.ID_Concepto && (registro.Clave_Concepto_Temp || registro.Clave)) {
+                            const clave = (registro.Clave_Concepto_Temp || registro.Clave).toString().trim();
+                            if (idContratoContextoActual) {
+                                // Intento 1: Por Clave (Insensible)
+                                const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoContextoActual });
+                                let matchClave = catalogo.find(c => String(c.Clave).trim().toUpperCase() === clave.toUpperCase());
+                                
+                                if (matchClave) {
+                                    registro.ID_Concepto = matchClave.ID_Concepto;
+                                } else {
+                                    // Intento 2: Por Descripción (Contextual)
+                                    const descNorm = normalizeText(registro.Descripcion_Temp || registro.Descripcion || registro.Descripcion_Limpiada || "");
+                                    if (descNorm) {
+                                        const matchDesc = catalogo.find(c => normalizeText(c.Descripcion) === descNorm);
+                                        if (matchDesc) {
+                                            registro.ID_Concepto = matchDesc.ID_Concepto;
+                                        } else {
+                                            // NUEVO: Si no existe el concepto, crearlo para evitar pérdida de datos
+                                            const nuevoConcepto = dbInsert('Catalogo_Conceptos', {
+                                                ID_Contrato: idContratoContextoActual,
+                                                Clave: clave,
+                                                Descripcion: registro.Descripcion_Temp || registro.Descripcion || "Concepto importado vía Programa",
+                                                Unidad: registro.Unidad || 'S/U',
+                                                Cantidad_Contratada: 1,
+                                                Precio_Unitario: 0
+                                            });
+                                            if (nuevoConcepto) registro.ID_Concepto = nuevoConcepto.ID_Concepto;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Resolver ID_Programa_Periodo (NORMALIZADO)
+                        if (!registro.ID_Programa_Periodo && (registro.Periodo_Temp || registro.Periodo)) {
+                            const perLabel = (registro.Periodo_Temp || registro.Periodo).toString().trim().toUpperCase();
+
+                            // Intentar recuperar el ID real insertado en esta sesión para este nombre de periodo
+                            const keyNormalizada = Object.keys(mapaPeriodosReales).find(k => k.trim().toUpperCase() === perLabel);
+
+                            if (keyNormalizada && mapaPeriodosReales[keyNormalizada]) {
+                                registro.ID_Programa_Periodo = mapaPeriodosReales[keyNormalizada].ID_Programa_Periodo;
+                            } else {
+                                // Buscar en DB
+                                const idProgPadre = ultimosIdsInsertados['Programa'] || (dbSelect('Programa', { ID_Contrato: idContratoContextoActual })[0] || {}).ID_Numero_Programa;
+                                if (idProgPadre) {
+                                    const periodosDB = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProgPadre });
+                                    let matchDB = periodosDB.find(p => (p.Periodo || "").toString().trim().toUpperCase() === perLabel);
+                                    
+                                    if (!matchDB) {
+                                        matchDB = periodosDB.find(p => (p.Periodo || "").toString().trim().toUpperCase().includes(perLabel));
+                                    }
+                                    
+                                    if (matchDB) registro.ID_Programa_Periodo = matchDB.ID_Programa_Periodo;
+                                }
+                            }
+
+                            // Propagar fechas si ya tenemos el ID
+                            if (registro.ID_Programa_Periodo) {
+                                if (!registro.Fecha_Inicio || !registro.Fecha_Fin) {
+                                    const pData = mapaPeriodosReales[perLabel] || dbSelect('Programa_Periodo', { ID_Programa_Periodo: registro.ID_Programa_Periodo })[0];
+                                    if (pData) {
+                                        if (!registro.Fecha_Inicio) registro.Fecha_Inicio = pData.Fecha_Inicio;
+                                        if (!registro.Fecha_Fin) registro.Fecha_Fin = pData.Fecha_Termino || pData.Fecha_Fin;
+                                    }
+                                }
+                            }
+                        }
+
+                        // NUEVO: RECÁLCULO DE IMPORTES Y PORCENTAJES RE-NORMALIZADOS ("PARCIALEZ")
+                        // Resolvemos el monto del contrato aquí para asegurar que si se creó en esta sesión, tengamos el dato.
+                        let montoTotalContrato = 0;
+                        if (idContratoContextoActual) {
+                            const cDB = dbSelect('Contratos', { ID_Contrato: idContratoContextoActual });
+                            if (cDB && cDB.length > 0) montoTotalContrato = parseFloat(cDB[0].Monto_Total_Con_IVA) || 0;
+                        }
+
+                        if (montoTotalContrato > 0) {
+                            const pctIA = parseFloat(registro.Avance_Programado_Pct) || 0;
+                            const montoIA = parseFloat(registro.Monto_Programado) || 0;
+
+                            if (montoIA > 0) {
+                                // Si tenemos monto, el % SIEMPRE se recalcula para ser "Parcial" (vs contrato total)
+                                registro.Avance_Programado_Pct = (montoIA / montoTotalContrato) * 100;
+                            } else if (pctIA > 0) {
+                                // Si solo tenemos %, el usuario indica que suelen ser conceptuales (por fila)
+                                // Intentamos obtener el total del concepto para normalizar
+                                let montoConceptoTotal = 0;
+                                if (registro.ID_Concepto) {
+                                    const conDB = dbSelect('Catalogo_Conceptos', { ID_Concepto: registro.ID_Concepto });
+                                    if (conDB && conDB.length > 0) montoConceptoTotal = parseFloat(conDB[0].Importe_Total_Sin_IVA) || 0;
+                                }
+
+                                if (montoConceptoTotal > 0) {
+                                    // Calculamos el monto real del periodo usando el % conceptual
+                                    const montoCalculado = (montoConceptoTotal * (pctIA / 100));
+                                    registro.Monto_Programado = montoCalculado.toFixed(2);
+                                    // Y fijamos el % como parcial vs el contrato
+                                    registro.Avance_Programado_Pct = (montoCalculado / montoTotalContrato) * 100;
+                                } else {
+                                    // Fallback: Si no hay monto de concepto, asumimos que el % ya es parcial
+                                    registro.Monto_Programado = (montoTotalContrato * (pctIA / 100)).toFixed(2);
+                                    registro.Avance_Programado_Pct = pctIA;
+                                }
+                            }
+                        }
+
+                        // Limpiar temporales
+                        delete registro.Clave_Concepto_Temp;
+                        delete registro.Periodo_Temp;
+                        delete registro.ID_Numero_Programa;
+                    }
+
                     // INYECCIÓN FORZOSA DE LLAVES FORÁNEAS (Basado en RELACIONES_BD)
                     const relacion = typeof RELACIONES_BD !== 'undefined' ? RELACIONES_BD[tabla] : null;
-                    const idContratoContextoActual = resultados.ids['Contratos'] || globalIdContrato;
 
                     if (relacion) {
                         let tablaPadre = Array.isArray(relacion) ? relacion[0].padre : relacion.padre;
@@ -787,66 +1172,6 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                         }
                     }
 
-                    // --- RESOLUCIÓN DE TEMPORALES Y LINKS JERÁRQUICOS ---
-                    if (tabla === 'Matriz_Insumos') {
-                        // Cruzar para obtener el ID_Concepto real desde la base de datos usando la Clave
-                        if (!registro.ID_Concepto && (registro.Clave_Concepto_Padre || registro.Clave_Padre)) {
-                            const clavePadre = registro.Clave_Concepto_Padre || registro.Clave_Padre;
-                            if (idContratoContextoActual) {
-                                const con = dbSelect('Catalogo_Conceptos', { Clave: clavePadre, ID_Contrato: idContratoContextoActual });
-                                if (con && con.length > 0) {
-                                    registro.ID_Concepto = con[0].ID_Concepto;
-                                }
-                            }
-                        }
-                        // Fallback: usar el último concepto insertado/actualizado en esta sesión
-                        if (!registro.ID_Concepto && ultimosIdsInsertados['Catalogo_Conceptos']) {
-                            registro.ID_Concepto = ultimosIdsInsertados['Catalogo_Conceptos'];
-                        }
-                        // Limpiar campos temporales que no existen en el esquema
-                        delete registro.Clave_Concepto_Padre;
-                        delete registro.Clave_Padre;
-                        delete registro.ID_Contrato; // No existe en esquema Matriz_Insumos
-                    }
-                    if (tabla === 'Programa_Ejecucion') {
-                        // 1. Resolver ID_Numero_Programa
-                        if (!registro.ID_Numero_Programa) {
-                            registro.ID_Numero_Programa = ultimosIdsInsertados['Programa'];
-                        }
-
-                        // 2. Resolver ID_Concepto (por Clave_Temp o por búsqueda inteligente)
-                        if (!registro.ID_Concepto && (registro.Clave_Concepto_Temp || registro.Clave)) {
-                            const clave = registro.Clave_Concepto_Temp || registro.Clave;
-                            if (idContratoContextoActual) {
-                                const con = dbSelect('Catalogo_Conceptos', { Clave: clave, ID_Contrato: idContratoContextoActual });
-                                if (con && con.length > 0) registro.ID_Concepto = con[0].ID_Concepto;
-                            }
-                        }
-
-                        // 3. Resolver ID_Programa_Periodo (por Periodo_Temp o búsqueda)
-                        if (!registro.ID_Programa_Periodo && (registro.Periodo_Temp || registro.Periodo)) {
-                            const perLabel = registro.Periodo_Temp || registro.Periodo;
-                            const idProg = registro.ID_Numero_Programa || ultimosIdsInsertados['Programa'];
-                            if (idProg) {
-                                const per = dbSelect('Programa_Periodo', { Periodo: perLabel, ID_Numero_Programa: idProg });
-                                if (per && per.length > 0) {
-                                    registro.ID_Programa_Periodo = per[0].ID_Programa_Periodo;
-                                    // Propagar fechas del periodo a la ejecución
-                                    if (!registro.Fecha_Inicio && per[0].Fecha_Inicio) {
-                                        registro.Fecha_Inicio = per[0].Fecha_Inicio;
-                                    }
-                                    if (!registro.Fecha_Fin && per[0].Fecha_Termino) {
-                                        registro.Fecha_Fin = per[0].Fecha_Termino;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Limpiar temporales
-                        delete registro.Clave_Concepto_Temp;
-                        delete registro.Periodo_Temp;
-                    }
-
                     let match = null;
                     const idOriginalDadoPorIA = registro[pkName];
 
@@ -871,7 +1196,16 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                     // --- SMART MATCHING Y DE-DUPLICACIÓN (Hijos) ---
                     if (!match) {
-                        if (tabla === 'Catalogo_Conceptos' && registro.ID_Contrato) {
+                        if (tabla === 'Contratistas' && registro.RFC) {
+                            const resC = dbSelect('Contratistas', { RFC: registro.RFC });
+                            if (resC && resC.length > 0) match = resC[0];
+                        } else if (tabla === 'Convenios_Recurso' && registro.Numero_Acuerdo) {
+                            const resConv = dbSelect('Convenios_Recurso', { Numero_Acuerdo: registro.Numero_Acuerdo });
+                            if (resConv && resConv.length > 0) match = resConv[0];
+                        } else if (tabla === 'Contratos' && registro.Numero_Contrato) {
+                            const resCon = dbSelect('Contratos', { Numero_Contrato: registro.Numero_Contrato });
+                            if (resCon && resCon.length > 0) match = resCon[0];
+                        } else if (tabla === 'Catalogo_Conceptos' && registro.ID_Contrato) {
                             // Match por Clave primero
                             if (registro.Clave) {
                                 const resClave = dbSelect('Catalogo_Conceptos', { Clave: registro.Clave, ID_Contrato: registro.ID_Contrato });
@@ -891,20 +1225,39 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             const resProg = dbSelect('Programa', condProg);
                             if (resProg && resProg.length > 0) match = resProg[0];
                         } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa && registro.Periodo) {
+                            // MATCH POR NOMBRE DE PERIODO (Natural Key)
                             const resPer = dbSelect('Programa_Periodo', { ID_Numero_Programa: registro.ID_Numero_Programa, Periodo: registro.Periodo });
                             if (resPer && resPer.length > 0) match = resPer[0];
                         } else if (tabla === 'Matriz_Insumos' && registro.ID_Concepto && registro.Clave_Insumo) {
                             const resMat = dbSelect('Matriz_Insumos', { ID_Concepto: registro.ID_Concepto, Clave_Insumo: registro.Clave_Insumo });
                             if (resMat && resMat.length > 0) match = resMat[0];
-                        } else if (tabla === 'Programa_Ejecucion' && registro.ID_Numero_Programa && registro.ID_Concepto && registro.ID_Programa_Periodo) {
+                        } else if (tabla === 'Programa_Ejecucion' && registro.ID_Concepto && registro.ID_Programa_Periodo) {
+                            // MATCHING DINÁMICO: Basar en Concepto + Periodo
                             const resEjec = dbSelect('Programa_Ejecucion', {
-                                ID_Numero_Programa: registro.ID_Numero_Programa,
                                 ID_Concepto: registro.ID_Concepto,
                                 ID_Programa_Periodo: registro.ID_Programa_Periodo
                             });
-                            if (resEjec && resEjec.length > 0) match = resEjec[0];
+                            if (resEjec && resEjec.length > 0) {
+                                match = resEjec[0];
+                                if (resEjec && resEjec.length > 1) {
+                                    // Dejar el primero que macha y borrar los demas para evitar duplicados infinitos
+                                    for (let k = 1; k < resEjec.length; k++) {
+                                        const condDel = {};
+                                        condDel[pkName] = resEjec[k][pkName];
+                                        dbDelete('Programa_Ejecucion', condDel);
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    // Limpiar campos temporales para no insertarlos en columnas basura
+                    delete registro.Clave_Concepto_Temp;
+                    delete registro.Descripcion_Temp;
+                    delete registro.Periodo_Temp;
+                    // NO BORRAR Clave ni Periodo, son parte del esquema
+                    // delete registro.Clave; 
+                    // delete registro.Periodo;
 
                     // --- REGLAS DE NEGOCIO PARA MATRICES ---
                     if (tabla === 'Matriz_Insumos') {
@@ -935,6 +1288,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                         if (idOriginalDadoPorIA) mapaIds[idOriginalDadoPorIA] = match[pkName];
                         ultimosIdsInsertados[tabla] = match[pkName];
 
+                        // NUEVO: Registrar en el mapa de periodos por nombre (OBJETO COMPLETO PARA FECHAS)
+                        if (tabla === 'Programa_Periodo' && registro.Periodo) {
+                            mapaPeriodosReales[registro.Periodo] = { ...dataMerged, ID_Programa_Periodo: match[pkName] };
+                        }
+
                     } else {
                         if (tabla === 'Catalogo_Conceptos') {
                             registro.Cantidad_Contratada = registro.Cantidad_Contratada || 1;
@@ -955,6 +1313,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             ultimosIdsInsertados[tabla] = newId;
                             resultados.ids[tabla] = newId;
                             if (idOriginalDadoPorIA) mapaIds[idOriginalDadoPorIA] = newId;
+
+                            // NUEVO: Registrar en el mapa de periodos por nombre (OBJETO COMPLETO PARA FECHAS)
+                            if (tabla === 'Programa_Periodo' && registro.Periodo) {
+                                mapaPeriodosReales[registro.Periodo] = { ...registro, ID_Programa_Periodo: newId };
+                            }
                         }
                     }
                 } catch (errReg) {

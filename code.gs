@@ -9,16 +9,16 @@ const ESQUEMA_BD = {
     'Contratistas': ['ID_Contratista', 'Razon_Social', 'RFC', 'Domicilio_Fiscal', 'Representante_Legal', 'Telefono', 'Banco', 'Cuenta_Bancaria', 'Cuenta_CLABE'],
     'Contratos': [
         'ID_Contrato', 'Numero_Contrato', 'ID_Convenio_Vinculado', 'ID_Contratista',
-        'Objeto_Contrato', 'Tipo_Contrato', 'Area_Responsable',
-        'No_Concurso', 'Modalidad_Adjudicacion', 'Fecha_Adjudicacion',
-        'Monto_Total_Sin_IVA', 'Monto_Total_Con_IVA',
-        'Fecha_Firma', 'Fecha_Inicio_Obra', 'Fecha_Fin_Obra', 'Plazo_Ejecucion_Dias',
-        'Porcentaje_Amortizacion_Anticipo', 'Porcentaje_Penas_Convencionales',
-        'No_Fianza_Cumplimiento', 'Monto_Fianza_Cumplimiento', 'No_Fianza_Anticipo', 'Monto_Fianza_Anticipo',
-        'No_Fianza_Garantia', 'Monto_Fianza_Garantia', 'No_Fianza_Vicios_Ocultos', 'Monto_Fianza_Vicios_Ocultos',
-        'Estado', 'Retencion_Vigilancia_Pct', 'Retencion_Garantia_Pct', 'Otras_Retenciones_Pct',
-        'Nombre_Residente_Dependencia', 'Link_Sharepoint',
-        'Pct_Indirectos_Oficina', 'Pct_Indirectos_Campo', 'Pct_Indirectos_Totales', 'Pct_Financiamiento', 'Pct_Utilidad', 'Pct_Cargos_SFP', 'Pct_ISN'
+        'Objeto_Contrato', 'Monto_Total_Sin_IVA', 'Monto_Total_Con_IVA',
+        'Fecha_Firma', 'Fecha_Inicio_Obra', 'Fecha_Fin_Obra', 'Estado',
+        'Tipo_Contrato', 'Area_Responsable', 'No_Concurso', 'Modalidad_Adjudicacion', 'Fecha_Adjudicacion',
+        'Plazo_Ejecucion_Dias', 'Estatus_Fianza_Anticipo', 'Estatus_Fianza_Cumplimiento', 'Estatus_Fianza_Vicios_Ocultos',
+        'pct_Anticipo', 'Monto_Anticipo', 'No_Fianza_Anticipo', 'Nombre_Afianzadora_Anticipo',
+        'pct_Cumplimiento', 'Monto_Fianza_Cumplimiento', 'No_Fianza_Cumplimiento', 'Nombre_Afianzadora_Cumplimiento',
+        'pct_Vicios_Ocultos', 'No_Fianza_Vicios_Ocultos', 'Monto_Fianza_Vicios_Ocultos', 'Nombre_Afianzadora_Vicios_Ocultos',
+        'Nombre_Residente_Dependencia', 'pct_Penas_Convencionales', 'pct_Retencion_Incumplimiento', 'Otras_Retenciones_Pct',
+        'Pct_Indirectos_Oficina', 'Pct_Indirectos_Campo', 'Pct_Indirectos_Totales', 'Pct_Financiamiento', 'Pct_Utilidad', 'Pct_Cargos_SFP', 'Pct_ISN',
+        'Link_Sharepoint'
     ],
     'Convenios_Modificatorios': ['ID_Convenio_Mod', 'ID_Contrato', 'Numero_Convenio_Mod', 'Tipo_Modificacion', 'Nuevo_Monto_Con_IVA', 'Nueva_Fecha_Fin', 'Motivo', 'Link_Sharepoint'],
     'Anticipos': ['ID_Anticipo', 'ID_Contrato', 'Porcentaje_Otorgado', 'Monto_Anticipo', 'Fecha_Pago', 'Monto_Amortizado_Acumulado', 'Saldo_Por_Amortizar'],
@@ -181,11 +181,15 @@ function getDetalleContrato(idContrato) {
                 const dataC = getSafeData(sheetC);
                 const cabC = dataC[0];
                 const idxBuscaId = getColIndex(cabC, 'ID_Contratista');
-                const idxNombre = getColIndex(cabC, 'Razon_Social');
-                if (idxBuscaId !== -1 && idxNombre !== -1) {
+                if (idxBuscaId !== -1) {
                     for (let k = 1; k < dataC.length; k++) {
                         if (String(dataC[k][idxBuscaId]) === String(idContratistaValue)) {
-                            contratoEncontrado['Nombre_Contratista'] = dataC[k][idxNombre];
+                            // Inyectar todos los campos del contratista con prefijo 'Contratista_'
+                            for (let m = 0; m < cabC.length; m++) {
+                                contratoEncontrado['Contratista_' + cabC[m]] = dataC[k][m];
+                            }
+                            // Mantener compatibilidad con Nombre_Contratista
+                            contratoEncontrado['Nombre_Contratista'] = contratoEncontrado['Contratista_Razon_Social'];
                             break;
                         }
                     }
@@ -278,7 +282,9 @@ function getDashboardData() {
         let contratosActivos = 0;
         let estimacionesPendientes = 0;
         let fianzasPorVencer = 0;
+        let alertasHitos = []; // Nueva lista de alertas
 
+        const HOY = new Date();
         const parseMonto = (v) => {
             if (typeof v === 'number') return v;
             if (!v) return 0;
@@ -331,9 +337,212 @@ function getDashboardData() {
                 contratosRecientes = todos.slice(0, 8).map(c => {
                     const sanitized = { ...c };
                     sanitized.Fecha_Firma = sanitizeDate(c.Fecha_Firma_Date);
-                    delete sanitized.Fecha_Firma_Date; // Borrar objeto Date para evitar errores de serialización
+                    delete sanitized.Fecha_Firma_Date;
                     return sanitized;
                 });
+
+                // --- Lógica de Alertas de Hitos ---
+                const dataH = getSafeData(sheetContratos);
+                const cabH = dataH[0];
+                const idxFinObra = getColIndex(cabH, 'Fecha_Fin_Obra');
+                const idxIdH = getColIndex(cabH, 'ID_Contrato');
+                const idxNumH = getColIndex(cabH, 'Numero_Contrato');
+                const idxEstH = getColIndex(cabH, 'Estado');
+
+                for (let i = 1; i < dataH.length; i++) {
+                    const f = dataH[i];
+                    const fFin = f[idxFinObra];
+                    const estado = String(f[idxEstH] || '').toLowerCase();
+                    
+                    // Solo considerar contratos que no estén ya liquidados o cancelados
+                    if (['finalizado', 'liquidado', 'cancelado', 'rescindido'].includes(estado)) continue;
+
+                    if (fFin instanceof Date) {
+                        const diffDiasTermino = Math.ceil((fFin - HOY) / (1000 * 60 * 60 * 24));
+                        
+                        // 1. Término de Contrato (Próximo a vencer)
+                        if (diffDiasTermino <= 30 && diffDiasTermino >= -5) {
+                            alertasHitos.push({
+                                idContrato: f[idxIdH],
+                                numero: f[idxNumH],
+                                tipo: 'TERMINO',
+                                titulo: 'Término de Obra',
+                                fecha: sanitizeDate(fFin),
+                                diasRestantes: diffDiasTermino,
+                                urgencia: diffDiasTermino <= 7 ? 'ALTA' : 'MEDIA'
+                            });
+                        }
+
+                        // Calcular Hitos Post-Término
+                        const fVerificacion = new Date(fFin);
+                        fVerificacion.setDate(fVerificacion.getDate() + 15);
+                        
+                        const fEntrega = new Date(fVerificacion);
+                        fEntrega.setDate(fEntrega.getDate() + 15);
+                        
+                        const fFiniquito = new Date(fEntrega);
+                        fFiniquito.setDate(fFiniquito.getDate() + 60);
+
+                        // 2. Verificación (15 días naturales después del término)
+                        const diffVerif = Math.ceil((fVerificacion - HOY) / (1000 * 60 * 60 * 24));
+                        if (diffVerif <= 7 && diffVerif >= -3) {
+                            alertasHitos.push({
+                                idContrato: f[idxIdH],
+                                numero: f[idxNumH],
+                                tipo: 'VERIFICACION',
+                                titulo: 'Acto de Verificación',
+                                fecha: sanitizeDate(fVerificacion),
+                                diasRestantes: diffVerif,
+                                urgencia: diffVerif <= 2 ? 'ALTA' : 'MEDIA'
+                            });
+                        }
+
+                        // 3. Entrega Recepción (15 días naturales posteriores a la verificación)
+                        const diffEntrega = Math.ceil((fEntrega - HOY) / (1000 * 60 * 60 * 24));
+                        if (diffEntrega <= 7 && diffEntrega >= -3) {
+                            alertasHitos.push({
+                                idContrato: f[idxIdH],
+                                numero: f[idxNumH],
+                                tipo: 'ENTREGA',
+                                titulo: 'Entrega-Recepción',
+                                fecha: sanitizeDate(fEntrega),
+                                diasRestantes: diffEntrega,
+                                urgencia: diffEntrega <= 2 ? 'ALTA' : 'MEDIA'
+                            });
+                        }
+
+                        // 4. Finiquito (60 días naturales posteriores a la entrega)
+                        const diffFiniquito = Math.ceil((fFiniquito - HOY) / (1000 * 60 * 60 * 24));
+                        if (diffFiniquito <= 15 && diffFiniquito >= -5) {
+                            alertasHitos.push({
+                                idContrato: f[idxIdH],
+                                numero: f[idxNumH],
+                                tipo: 'FINIQUITO',
+                                titulo: 'Cierre de Finiquito',
+                                fecha: sanitizeDate(fFiniquito),
+                                diasRestantes: diffFiniquito,
+                                urgencia: diffFiniquito <= 5 ? 'ALTA' : 'MEDIA'
+                            });
+                        }
+                    }
+                }
+                // Ordenar alertas por urgencia y proximidad
+                alertasHitos.sort((a, b) => a.diasRestantes - b.diasRestantes);
+
+                // --- Lógica de Alertas de Estimaciones (Recurrentes y Dinámicas) ---
+                
+                // 1. Alertar sobre el Ciclo General (Día 6 como CORTE default)
+                // Si hoy es antes del 6, alertar sobre el próximo corte.
+                // Si ya pasó el 6, alertar sobre la fecha límite (Corte + 6 = Día 12).
+                
+                const dayOfMonth = HOY.getDate();
+                const currentMonth = HOY.getMonth();
+                const currentYear = HOY.getFullYear();
+
+                // Caso A: Pendiente de Corte (Antes o día del Corte)
+                const fCorteDefault = new Date(currentYear, currentMonth, 6);
+                const diffCorte = Math.ceil((fCorteDefault - HOY) / (1000 * 60 * 60 * 24));
+
+                if (diffCorte >= -1 && diffCorte <= 5) {
+                    alertasHitos.unshift({ 
+                        idContrato: 'GLOBAL',
+                        numero: 'CICLO MENSUAL',
+                        tipo: 'CORTE',
+                        titulo: 'Próximo Corte de Estimación',
+                        fecha: sanitizeDate(fCorteDefault),
+                        diasRestantes: diffCorte,
+                        urgencia: diffCorte <= 1 ? 'ALTA' : 'MEDIA'
+                    });
+                }
+
+                // Caso B: Posterior al Corte, calculando Límite de Recepción (+6 días)
+                // Buscamos estimaciones recientes para ver si hay una con "Corte" específico
+                // Si no hay especificación, usamos el día 6 como base.
+                
+                // Regla General: Si estamos entre el día 6 y el 12 (aprox)
+                const fLimiteDefault = new Date(fCorteDefault);
+                fLimiteDefault.setDate(fLimiteDefault.getDate() + 6); // Día 12
+                const diffLimite = Math.ceil((fLimiteDefault - HOY) / (1000 * 60 * 60 * 24));
+
+                if (diffLimite >= 0 && diffLimite <= 6) {
+                    alertasHitos.push({
+                        idContrato: 'GLOBAL',
+                        numero: 'TRÁMITE RECEPCIÓN',
+                        tipo: 'RECEPCION',
+                        titulo: 'Fecha Límite de Entrega (Corte + 6d)',
+                        fecha: sanitizeDate(fLimiteDefault),
+                        diasRestantes: diffLimite,
+                        urgencia: diffLimite <= 2 ? 'ALTA' : 'MEDIA'
+                    });
+                }
+
+                // Caso C: Pago (20-41 días post corte)
+                const fPagoMin = new Date(fCorteDefault);
+                fPagoMin.setDate(fPagoMin.getDate() + 20);
+                const fPagoMax = new Date(fCorteDefault);
+                fPagoMax.setDate(fPagoMax.getDate() + 41);
+
+                const diffP1 = Math.ceil((fPagoMin - HOY) / (1000 * 60 * 60 * 24));
+                const diffP2 = Math.ceil((fPagoMax - HOY) / (1000 * 60 * 60 * 24));
+
+                if (diffP1 >= -1 && diffP1 <= 5) {
+                    alertasHitos.push({
+                        idContrato: 'GLOBAL',
+                        numero: 'TRÁMITE PAGO',
+                        tipo: 'PAGO_MIN',
+                        titulo: 'Inicio de Ventana de Pago',
+                        fecha: sanitizeDate(fPagoMin),
+                        diasRestantes: diffP1,
+                        urgencia: 'MEDIA'
+                    });
+                }
+
+                if (diffP2 >= -1 && diffP2 <= 7) {
+                    alertasHitos.push({
+                        idContrato: 'GLOBAL',
+                        numero: 'VENCIMIENTO LEY',
+                        tipo: 'PAGO_MAX',
+                        titulo: 'Límite Máximo de Pago (Corte + 41d)',
+                        fecha: sanitizeDate(fPagoMax),
+                        diasRestantes: diffP2,
+                        urgencia: diffP2 <= 2 ? 'ALTA' : 'MEDIA'
+                    });
+                }
+
+                // 2. Alertas Específicas por Estimaciones de Contratos
+                // Buscamos estimaciones que no estén PAGADAS ni FINALIZADAS
+                sheetEstimaciones.forEach(est => {
+                    const status = (est.Estado_Validacion || '').toUpperCase();
+                    if (status !== 'PAGADA' && status !== 'FINALIZADA' && est.Periodo_Fin) {
+                        const fCorteReal = new Date(est.Periodo_Fin);
+                        if (isNaN(fCorteReal.getTime())) return;
+
+                        const fLimiteReal = new Date(fCorteReal);
+                        fLimiteReal.setDate(fLimiteReal.getDate() + 6);
+
+                        const dLim = Math.ceil((fLimiteReal - HOY) / (1000 * 60 * 60 * 24));
+                        
+                        // Si la fecha límite está cerca (3 días antes o ya pasó pero no mucho)
+                        if (dLim <= 5 && dLim >= -5) {
+                            // Encontrar el número de contrato para el título
+                            const cInfo = sheetContratos.find(c => c.ID_Contrato == est.ID_Contrato);
+                            const numC = cInfo ? cInfo.Numero_Contrato : 'Contrato';
+
+                            alertasHitos.push({
+                                idContrato: est.ID_Contrato,
+                                numero: numC,
+                                tipo: 'RECEPCION',
+                                titulo: `Límite Entrega Est. ${est.No_Estimacion || ''}`,
+                                fecha: sanitizeDate(fLimiteReal),
+                                diasRestantes: dLim,
+                                urgencia: dLim <= 1 ? 'ALTA' : 'MEDIA'
+                            });
+                        }
+                    }
+                });
+
+                // Re-ordenar al final para que las más urgentes (menor diasRestantes) aparezcan primero
+                alertasHitos.sort((a, b) => a.diasRestantes - b.diasRestantes);
             }
         } catch (e) {
             console.error("Error procesando contratos:", e);
@@ -424,6 +633,7 @@ function getDashboardData() {
                 estimacionesPendientes,
                 fianzasPorVencer
             },
+            alertas: alertasHitos,
             contratosRecientes,
             conteoEstados,
             proyeccionesMensuales,
@@ -537,27 +747,25 @@ function getProgramaEjecucion(idContrato) {
             return generarRespuesta(true, { meses: [], conceptosMatriz: [] });
         }
 
-        // 2. Obtener o Crear registro en la tabla Programa (Nivel 1)
+        // 2. Obtener TODOS los registros en la tabla Programa (Nivel 1) para este contrato
         const dataProg = getSafeData(sheetProg);
         const cabecerasProg = dataProg[0];
         const idxProgIdNum = getColIndex(cabecerasProg, 'ID_Numero_Programa');
         const idxProgIdCont = getColIndex(cabecerasProg, 'ID_Contrato');
 
-        let programa = dataProg.find(r => String(r[idxProgIdCont]) === String(idContrato));
+        const programasContrato = dataProg.filter(r => String(r[idxProgIdCont]) === String(idContrato));
         let idNumeroPrograma;
+        const idsTodosProgramas = programasContrato.map(p => String(p[idxProgIdNum]));
 
-        if (!programa) {
+        if (programasContrato.length === 0) {
             idNumeroPrograma = dataProg.length > 1 ? (Math.max(...dataProg.slice(1).map(r => parseInt(r[idxProgIdNum]) || 0)) + 1) : 1;
-            sheetProg.appendRow([
-                idNumeroPrograma,
-                idContrato,
-                "MENSUAL", // Forzado a Mensual
-                "ORIGINAL",
-                fInicio,
-                fFin
-            ]);
+            sheetProg.appendRow([idNumeroPrograma, idContrato, "MENSUAL", "ORIGINAL", fInicio, fFin]);
+            idsTodosProgramas.push(String(idNumeroPrograma));
         } else {
-            idNumeroPrograma = programa[idxProgIdNum];
+            // NUEVO: Pick the LATEST program instead of the FIRST one
+            // We sort by ID as a proxy for date/recency
+            const progsSorted = [...programasContrato].sort((a, b) => parseInt(b[idxProgIdNum]) - parseInt(a[idxProgIdNum]));
+            idNumeroPrograma = progsSorted[0][idxProgIdNum];
         }
 
         // 3. Gestionar Periodos en Programa_Periodo (Nivel 2)
@@ -568,6 +776,7 @@ function getProgramaEjecucion(idContrato) {
         const idxPerNum = getColIndex(cabecerasPer, 'Numero_Periodo');
         const idxPerLabel = getColIndex(cabecerasPer, 'Periodo');
 
+        // Obtenemos periodos del programa principal (el primero encontrado)
         const periodosExistentes = dataPer.filter(r => String(r[idxPProgNum]) === String(idNumeroPrograma));
         const mesesLabels = [];
         let curr = new Date(fInicio.getFullYear(), fInicio.getMonth(), 1);
@@ -582,9 +791,9 @@ function getProgramaEjecucion(idContrato) {
             if (curr.getFullYear() === fFin.getFullYear() && curr.getMonth() === fFin.getMonth()) mesEnd = fFin;
 
             const mesesMap = {
-                'January': 'Enero', 'February': 'Febrero', 'March': 'Marzo', 'April': 'Abril',
-                'May': 'Mayo', 'June': 'Junio', 'July': 'Julio', 'August': 'Agosto',
-                'September': 'Septiembre', 'October': 'Octubre', 'November': 'Noviembre', 'December': 'Diciembre'
+                'January': 'ENERO', 'February': 'FEBRERO', 'March': 'MARZO', 'April': 'ABRIL',
+                'May': 'MAYO', 'June': 'JUNIO', 'July': 'JULIO', 'August': 'AGOSTO',
+                'September': 'SEPTIEMBRE', 'October': 'OCTUBRE', 'November': 'NOVIEMBRE', 'December': 'DICIEMBRE'
             };
             const labelEn = Utilities.formatDate(curr, Session.getScriptTimeZone(), "MMMM yyyy");
             let label = labelEn;
@@ -596,7 +805,6 @@ function getProgramaEjecucion(idContrato) {
             }
             label = label.toUpperCase();
 
-            // BUSQUEDA ROBUSTA: Por número de periodo en lugar de solo label para evitar duplicados por idioma/formato
             let pExistente = periodosExistentes.find(p => parseInt(p[idxPerNum]) === contadorNumPer);
             let idPeriodo;
 
@@ -604,13 +812,12 @@ function getProgramaEjecucion(idContrato) {
                 const fullDataPer = getSafeData(sheetPer);
                 const lastId = fullDataPer.length > 1 ? Math.max(...fullDataPer.slice(1).map(r => parseInt(r[idxPerId]) || 0)) : 0;
                 idPeriodo = lastId + 1;
-                // Forzar formato texto con apostrofe para evitar auto-deteccion de fecha en Sheets
                 sheetPer.appendRow([idPeriodo, idNumeroPrograma, contadorNumPer, "'" + label, mesStart, mesEnd]);
             } else {
                 idPeriodo = pExistente[idxPerId];
-                // Opcional: Actualizar el label si ha cambiado
-                if (String(pExistente[idxPerLabel]) !== String(label) && !pExistente[idxPerLabel]) {
+                if (String(pExistente[idxPerLabel]).toUpperCase() !== label) {
                     sheetPer.getRange(dataPer.indexOf(pExistente) + 1, idxPerLabel + 1).setValue("'" + label);
+                    pExistente[idxPerLabel] = label;
                 }
             }
 
@@ -618,12 +825,10 @@ function getProgramaEjecucion(idContrato) {
                 id: idPeriodo,
                 numero: contadorNumPer,
                 label: pExistente ? pExistente[idxPerLabel] : label,
-                start: Utilities.formatDate(mesStart, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-                end: Utilities.formatDate(mesEnd, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-                isoStart: mesStart.toISOString(),
-                isoEnd: mesEnd.toISOString(),
                 year: curr.getFullYear(),
-                month: curr.getMonth()
+                month: curr.getMonth(),
+                start: Utilities.formatDate(mesStart, Session.getScriptTimeZone(), "dd/MM/yyyy"),
+                end: Utilities.formatDate(mesEnd, Session.getScriptTimeZone(), "dd/MM/yyyy")
             });
             contadorNumPer++;
             curr.setMonth(curr.getMonth() + 1);
@@ -633,29 +838,63 @@ function getProgramaEjecucion(idContrato) {
         const conceptosRes = getConceptosContrato(idContrato);
         const conceptos = conceptosRes.success ? conceptosRes.data : [];
         if (conceptos.length === 0) {
-            return generarRespuesta(true, { meses: mesesLabels, conceptosMatriz: [] });
+            return generarRespuesta(true, { meses: mesesLabels, conceptosMatriz: [], subtotalContrato: 0 });
         }
+        // Crear Set de IDs de conceptos para búsqueda O(1)
+        const idsConceptosContrato = new Set(conceptos.map(c => String(c.ID_Concepto)));
 
         const dataEjec = getSafeData(sheetEjec);
+        if (dataEjec.length <= 1) {
+            return generarRespuesta(true, { idPrograma: idNumeroPrograma, meses: mesesLabels, conceptosMatriz: conceptos.map(c => ({ id: c.ID_Concepto, clave: c.Clave, descripcion: c.Descripcion, totalConcepto: parseFloat(c.Importe_Total_Sin_IVA) || 0, montos: new Array(mesesLabels.length).fill(0) })), subtotalContrato: conceptos.reduce((acc, c) => acc + (parseFloat(c.Importe_Total_Sin_IVA) || 0), 0) });
+        }
+
         const cabecerasEjec = dataEjec[0];
         const idxEjProg = getColIndex(cabecerasEjec, 'ID_Programa');
         const idxEjConc = getColIndex(cabecerasEjec, 'ID_Concepto');
         const idxEjPerId = getColIndex(cabecerasEjec, 'ID_Programa_Periodo');
         const idxEjMonto = getColIndex(cabecerasEjec, 'Monto_Programado');
+        const idxEjFIni = getColIndex(cabecerasEjec, 'Fecha_Inicio');
 
-        // OPTIMIZACIÓN: Crear un mapa de ejecuciones para acceso O(1)
+        // MAPEO DE PERIODOS (ROBUSTO): ID_Periodo -> Numero_Periodo
+        const mapPeriodoIdToNum = {};
+        const dataPerActualizado = getSafeData(sheetPer);
+        dataPerActualizado.slice(1).forEach(p => {
+            // Mapear ÚNICAMENTE los periodos del programa activo actual
+            if (String(p[idxPProgNum]) === String(idNumeroPrograma)) {
+                mapPeriodoIdToNum[String(p[idxPerId])] = parseInt(p[idxPerNum]);
+            }
+        });
+
+        // PROCESAMIENTO AGRESIVO: Clave = "IDConcepto_NumeroPeriodo"
         const ejecuMap = {};
-        if (dataEjec.length > 1) {
-            dataEjec.slice(1).forEach(r => {
-                if (String(r[idxEjProg]) === String(idNumeroPrograma)) {
-                    const key = `${r[idxEjConc]}_${r[idxEjPerId]}`;
-                    ejecuMap[key] = parseFloat(r[idxEjMonto]) || 0;
+        dataEjec.slice(1).forEach(r => {
+            const concId = String(r[idxEjConc]).trim();
+            // PRIMERA DEFENSA: ¿El concepto pertenece a este contrato?
+            if (idsConceptosContrato.has(concId)) {
+                let numPer = mapPeriodoIdToNum[String(r[idxEjPerId]).trim()];
+
+                // FILTRADO POR RELACIÓN: Solo mostrar si el periodo pertenece al programa activo
+                if (!numPer) return;
+
+                // SEGUNDA DEFENSA (FALLBACK): Coincidencia por Fecha
+                if (!numPer && r[idxEjFIni]) {
+                    const d = parseSafeDate(r[idxEjFIni]);
+                    if (d) {
+                        const mesMatch = mesesLabels.find(m => m.year === d.getFullYear() && m.month === d.getMonth());
+                        if (mesMatch) numPer = mesMatch.numero;
+                    }
                 }
-            });
-        }
+
+                if (numPer) {
+                    const key = `${concId}_${numPer}`;
+                    ejecuMap[key] = (ejecuMap[key] || 0) + (parseFloat(r[idxEjMonto]) || 0);
+                }
+            }
+        });
 
         const conceptosMatriz = conceptos.map(c => {
-            const montosMensuales = mesesLabels.map(mes => ejecuMap[`${c.ID_Concepto}_${mes.id}`] || 0);
+            const idC = String(c.ID_Concepto);
+            const montosMensuales = mesesLabels.map(mes => ejecuMap[`${idC}_${mes.numero}`] || 0);
 
             return {
                 id: c.ID_Concepto,
@@ -666,10 +905,13 @@ function getProgramaEjecucion(idContrato) {
             };
         });
 
+        const subtotalContrato = conceptos.reduce((acc, c) => acc + (parseFloat(c.Importe_Total_Sin_IVA) || 0), 0);
+
         return generarRespuesta(true, {
             idPrograma: idNumeroPrograma,
             meses: mesesLabels,
-            conceptosMatriz: conceptosMatriz
+            conceptosMatriz: conceptosMatriz,
+            subtotalContrato: subtotalContrato
         });
 
     } catch (error) {
@@ -831,7 +1073,7 @@ function sincronizarProgramaPorMontoConcepto(idContrato, idConcepto, nuevoMontoT
 /**
  * Actualiza o crea un registro en Programa_Ejecucion siguiendo la estructura de 3 niveles.
  */
-function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo, nuevoMonto) {
+function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo, nuevoMonto, pctCapturado = null, fuenteCambio = 'pct') {
     const nombreFuncion = "actualizarPeriodoPrograma";
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -852,7 +1094,7 @@ function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo
 
         const dataEjec = getSafeData(sheetEjec);
         const cabecerasEjec = dataEjec[0];
-        const idxEjProg = getColIndex(cabecerasEjec, 'ID_Programa');
+        const idxEjPK = 0; // ID_Programa (ahora PK único consecutivo)
         const idxEjConc = getColIndex(cabecerasEjec, 'ID_Concepto');
         const idxEjPerId = getColIndex(cabecerasEjec, 'ID_Programa_Periodo');
         const idxEjMonto = getColIndex(cabecerasEjec, 'Monto_Programado');
@@ -860,27 +1102,45 @@ function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo
 
         let filaEncontrada = -1;
         let sumaOtrosPeriodos = 0;
+        let maxIdPK = 0;
 
         for (let i = 1; i < dataEjec.length; i++) {
-            if (String(dataEjec[i][idxEjProg]) === String(idPrograma) && String(dataEjec[i][idxEjConc]) === String(idConcepto)) {
-                if (String(dataEjec[i][idxEjPerId]) === String(idPeriodo)) {
-                    filaEncontrada = i + 1;
-                } else {
-                    sumaOtrosPeriodos += parseFloat(dataEjec[i][idxEjMonto]) || 0;
-                }
+            const pkVal = parseInt(dataEjec[i][idxEjPK]) || 0;
+            if (pkVal > maxIdPK) maxIdPK = pkVal;
+
+            const idConcRow = String(dataEjec[i][idxEjConc]).trim();
+            const idPerIdRow = String(dataEjec[i][idxEjPerId]).trim();
+
+            // Identificar por Concepto y Periodo
+            if (idConcRow === String(idConcepto) && idPerIdRow === String(idPeriodo)) {
+                filaEncontrada = i + 1;
+            } else if (idConcRow === String(idConcepto)) {
+                sumaOtrosPeriodos += parseFloat(dataEjec[i][idxEjMonto]) || 0;
             }
         }
 
-        // 2. Validar Tope
-        if ((sumaOtrosPeriodos + nuevoMonto) > (topeMaximo + 0.10)) {
-            return generarRespuesta(false, `Excede tope: Programado $${(sumaOtrosPeriodos + nuevoMonto).toFixed(2)} vs Catálogo $${topeMaximo.toFixed(2)}`);
+        // 2. Lógica de Redondeo Estricta (Prioridad según Fuente)
+        let montoFinal = Math.round((parseFloat(nuevoMonto) || 0) * 100) / 100;
+        let pctFinal = 0;
+
+        if (fuenteCambio === 'pct' && pctCapturado !== null) {
+            // Caso %: El Pct manda, calculamos Monto y luego ajustamos Pct
+            const pVal = parseFloat(pctCapturado) || 0;
+            const montoCalculado = (pVal / 100) * subtotalContrato;
+            montoFinal = Math.round(montoCalculado * 100) / 100;
+        }
+        // Si fuenteCambio === 'monto', respetamos el montoFinal ya redondeado arriba
+
+        pctFinal = subtotalContrato > 0 ? (montoFinal / subtotalContrato) * 100 : 0;
+        pctFinal = Math.round(pctFinal * 10000) / 10000;
+
+        // 3. Validar Tope
+        if ((sumaOtrosPeriodos + montoFinal) > (topeMaximo + 0.10)) {
+            return generarRespuesta(false, `Excede tope: Programado $${(sumaOtrosPeriodos + montoFinal).toFixed(2)} vs Catálogo $${topeMaximo.toFixed(2)}`);
         }
 
-        // 3. Calcular % de avance relativo al TOTAL DEL CONTRATO
-        const pctAvance = subtotalContrato > 0 ? (nuevoMonto / subtotalContrato) * 100 : 0;
-
         // 4. Acción (Eliminar si 0, de lo contrario Upsert)
-        if (nuevoMonto <= 0) {
+        if (montoFinal <= 0) {
             if (filaEncontrada !== -1) {
                 sheetEjec.deleteRow(filaEncontrada);
                 return generarRespuesta(true, { success: true, message: "Removido" });
@@ -889,10 +1149,11 @@ function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo
         }
 
         if (filaEncontrada !== -1) {
-            sheetEjec.getRange(filaEncontrada, idxEjMonto + 1).setValue(nuevoMonto);
-            sheetEjec.getRange(filaEncontrada, idxEjPct + 1).setValue(pctAvance);
+            // Actualizar existente
+            sheetEjec.getRange(filaEncontrada, idxEjMonto + 1).setValue(montoFinal);
+            sheetEjec.getRange(filaEncontrada, idxEjPct + 1).setValue(pctFinal);
         } else {
-            // Obtener fechas desde Programa_Periodo
+            // Nuevo registro con ID consecutivo
             const sheetPer = ss.getSheetByName('Programa_Periodo');
             const dataPer = getSafeData(sheetPer);
             const cabPer = dataPer[0];
@@ -900,15 +1161,15 @@ function actualizarPeriodoPrograma(idContrato, idConcepto, idPrograma, idPeriodo
             const fIni = p ? p[getColIndex(cabPer, 'Fecha_Inicio')] : "";
             const fFin = p ? p[getColIndex(cabPer, 'Fecha_Termino')] : "";
 
-            // Seguir estrictamente ESQUEMA_BD: ['ID_Programa', 'ID_Concepto', 'ID_Programa_Periodo', 'Fecha_Inicio', 'Fecha_Fin', 'Monto_Programado', 'Avance_Programado_Pct', 'Link_Sharepoint']
+            const nuevoIdPK = maxIdPK + 1;
             sheetEjec.appendRow([
-                idPrograma,
+                nuevoIdPK,
                 idConcepto,
                 idPeriodo,
                 fIni,
                 fFin,
-                nuevoMonto,
-                pctAvance,
+                montoFinal,
+                pctFinal,
                 ""
             ]);
         }
@@ -1472,14 +1733,15 @@ function getDetalleEstimacion(idEstimacion) {
         if (!idEstimacion) throw new Error("ID de estimación no proporcionado.");
         const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-        // 1. Datos de la estimación
+        // 1. Datos de la estimación actual
         const sheetEst = ss.getSheetByName('Estimaciones');
         const dataEst = getSafeData(sheetEst);
         const cabEst = dataEst[0];
         const idxIdEst = getColIndex(cabEst, 'ID_Estimacion');
-        const filaEst = dataEst.find(r => String(r[idxIdEst]) === String(idEstimacion));
-        if (!filaEst) throw new Error("No se encontró el registro de la estimación.");
+        const rowIdxEst = dataEst.findIndex(r => String(r[idxIdEst]) === String(idEstimacion));
+        if (rowIdxEst === -1) throw new Error("No se encontró el registro de la estimación.");
 
+        const filaEst = dataEst[rowIdxEst];
         let estimacion = {};
         cabEst.forEach((col, i) => {
             let val = filaEst[i];
@@ -1487,37 +1749,64 @@ function getDetalleEstimacion(idEstimacion) {
             estimacion[col] = val;
         });
 
-        // 2. Datos del Contrato (para factores y encabezados)
-        const resCont = getDetalleContrato(estimacion.ID_Contrato);
+        const idContrato = estimacion.ID_Contrato;
+        const noEstActual = parseInt(estimacion.No_Estimacion) || 0;
+
+        // 2. Datos del Contrato
+        const resCont = getDetalleContrato(idContrato);
         const contrato = resCont.success ? resCont.data : {};
 
-        // 3. Detalle de Conceptos (VISTA COMPLETA - Incluye los que no están en la BD de esta estimación)
+        // 3. Obtener Acumulados Anteriores (Deltas de estimaciones previas)
         const sheetDet = ss.getSheetByName('Detalle_Estimacion');
-        const resConceptos = getConceptosContrato(estimacion.ID_Contrato);
-        if (!resConceptos.success) throw new Error(resConceptos.error);
-        const catalogo = resConceptos.data;
+        const dataDet = getSafeData(sheetDet);
+        const cabDet = dataDet.length > 0 ? dataDet[0] : [];
+        const idxIdEstDet = getColIndex(cabDet, 'ID_Estimacion');
+        const idxIdConceptoDet = getColIndex(cabDet, 'ID_Concepto');
+        const idxCantDet = getColIndex(cabDet, 'Cantidad_Estimada_Periodo');
+        const idxImporteDet = getColIndex(cabDet, 'Importe_Este_Periodo');
 
-        // Mapear los deltas guardados en la BD para esta estimación
+        // Identificar IDs de estimaciones anteriores del mismo contrato
+        const idsPrevios = dataEst.filter(r =>
+            String(r[getColIndex(cabEst, 'ID_Contrato')]) === String(idContrato) &&
+            parseInt(r[getColIndex(cabEst, 'No_Estimacion')]) < noEstActual
+        ).map(r => String(r[idxIdEst]));
+
+        const acumuladosPrevios = {}; // { idConcepto: { cant: 0, imp: 0 } }
+
+        // Mapear deltas de la estimación ACTUAL
         const deltasMap = {};
-        if (sheetDet) {
-            const dataDet = getSafeData(sheetDet);
-            const cabDet = dataDet.length > 0 ? dataDet[0] : [];
-            const idxIdEstDet = getColIndex(cabDet, 'ID_Estimacion');
-            const idxIdConceptoDet = getColIndex(cabDet, 'ID_Concepto');
 
-            for (let i = 1; i < dataDet.length; i++) {
-                if (String(dataDet[i][idxIdEstDet]) === String(idEstimacion)) {
-                    const idC = String(dataDet[i][idxIdConceptoDet]);
-                    const obj = {};
-                    cabDet.forEach((col, j) => obj[col] = dataDet[i][j]);
-                    deltasMap[idC] = obj;
-                }
+        for (let i = 1; i < dataDet.length; i++) {
+            const row = dataDet[i];
+            const idC = String(row[idxIdConceptoDet]);
+            const idEDet = String(row[idxIdEstDet]);
+
+            if (idEDet === String(idEstimacion)) {
+                // Es de la estimación actual
+                const obj = {};
+                cabDet.forEach((col, j) => obj[col] = row[j]);
+                deltasMap[idC] = obj;
+            } else if (idsPrevios.includes(idEDet)) {
+                // Es de una estimación anterior
+                if (!acumuladosPrevios[idC]) acumuladosPrevios[idC] = { cant: 0, imp: 0 };
+                acumuladosPrevios[idC].cant += (parseFloat(row[idxCantDet]) || 0);
+                acumuladosPrevios[idC].imp += (parseFloat(row[idxImporteDet]) || 0);
             }
         }
 
-        // Construir lista final mezclando catálogo + deltas
+        // 4. Detalle de Conceptos (Catalogo + Deltas + Acumulados)
+        const resConceptos = getConceptosContrato(idContrato);
+        if (!resConceptos.success) throw new Error(resConceptos.error);
+        const catalogo = resConceptos.data;
+
         const detalles = catalogo.map(c => {
-            const d = deltasMap[String(c.ID_Concepto)] || {};
+            const idC = String(c.ID_Concepto);
+            const d = deltasMap[idC] || {};
+            const prev = acumuladosPrevios[idC] || { cant: 0, imp: 0 };
+
+            // Priorizar Precio Unitario guardado en el delta para integridad histórica
+            const puHistorico = d.Precio_Unitario_Contrato !== undefined ? parseFloat(d.Precio_Unitario_Contrato) : (parseFloat(c.Precio_Unitario) || 0);
+
             return {
                 ID_Detalle: d.ID_Detalle || null,
                 ID_Estimacion: idEstimacion,
@@ -1526,13 +1815,21 @@ function getDetalleEstimacion(idEstimacion) {
                 Descripcion: c.Descripcion || '',
                 Unidad: c.Unidad || '',
                 Cantidad_Contratada: parseFloat(c.Cantidad_Contratada) || 0,
-                Precio_Unitario_Contrato: parseFloat(c.Precio_Unitario) || 0,
+                Precio_Unitario_Contrato: puHistorico,
                 Importe_Total_Sin_IVA: parseFloat(c.Importe_Total_Sin_IVA) || 0,
+
+                // Valores "Anteriores" calculados dinámicamente
+                Cantidad_Anterior: prev.cant,
+                Importe_Anterior: prev.imp,
+
+                // Valores de "Este Periodo" guardados
                 Cantidad_Estimada_Periodo: parseFloat(d.Cantidad_Estimada_Periodo) || 0,
                 Importe_Este_Periodo: parseFloat(d.Importe_Este_Periodo) || 0,
                 Avance_Periodo_Porcentaje: parseFloat(d.Avance_Periodo_Porcentaje) || 0,
-                Avance_Acumulado_Porcentaje: parseFloat(d.Avance_Acumulado_Porcentaje) || 0,
-                Importe_Acumulado: parseFloat(d.Importe_Acumulado) || 0
+
+                // Valores "Acumulados" (Anterior + Actual)
+                Avance_Acumulado_Porcentaje: parseFloat(d.Avance_Acumulado_Porcentaje) || ((prev.imp + (parseFloat(d.Importe_Este_Periodo) || 0)) / (parseFloat(contrato.Monto_Total_Sin_IVA) || 1)),
+                Importe_Acumulado: parseFloat(d.Importe_Acumulado) || (prev.imp + (parseFloat(d.Importe_Este_Periodo) || 0))
             };
         });
 
@@ -1545,6 +1842,7 @@ function getDetalleEstimacion(idEstimacion) {
         return generarRespuesta(false, error.message, nombreFuncion);
     }
 }
+
 
 /**
  * Actualiza las cantidades ejecutadas y recalcula los totales de la estimación.
@@ -1972,3 +2270,124 @@ function getValidacionesEstimacion(idEstimacion) {
         return generarRespuesta(false, error.message, nombreFuncion);
     }
 }
+
+/**
+ * Persiste los resultados del peritaje de fianza realizado por la IA.
+ * @param {string|number} idContrato - ID del contrato.
+ * @param {string} tipo - Tipo de fianza (Anticipo, Cumplimiento).
+ * @param {Object} dataIA - Datos devueltos por la IA.
+ * @param {string} accion - 'borrador' o 'validar'.
+ */
+function actualizarFianzaDesdeIA(idContrato, tipo, dataIA, accion) {
+    const nombreFuncion = "actualizarFianzaDesdeIA";
+    try {
+        if (!idContrato) throw new Error("ID de contrato no proporcionado.");
+        if (!dataIA || !dataIA.validacion) throw new Error("Datos de IA inválidos.");
+
+        const esValida = dataIA.validacion.estatus === 'VALIDA';
+        const extracted = dataIA.datos_extraidos || {};
+        
+        // Estatus prioritario: Si la IA dice que es válida pero es borrador, es BORRADOR_VALIDADO.
+        // Si no es válida pero es borrador, sigue siendo BORRADOR.
+        // Si no es borrador, es VALIDA o RECHAZADA.
+        let estatusCalculado = 'BORRADOR';
+        if (accion === 'borrador') {
+            estatusCalculado = esValida ? 'BORRADOR_VALIDADO' : 'BORRADOR';
+        } else if (accion === 'forzar') {
+            estatusCalculado = 'VALIDA'; // Forzado por el usuario
+        } else {
+            estatusCalculado = esValida ? 'VALIDA' : 'RECHAZADA';
+        }
+
+        let updateData = {};
+
+        // Mapear campos según el tipo
+        if (tipo === 'Anticipo') {
+            updateData.Estatus_Fianza_Anticipo = estatusCalculado;
+            if (extracted.num_fianza && extracted.num_fianza !== 'PENDIENTE') updateData.No_Fianza_Anticipo = extracted.num_fianza;
+            if (extracted.monto_documento) updateData.Monto_Fianza_Anticipo = extracted.monto_documento;
+            if (extracted.nombre_afianzadora) updateData.Nombre_Afianzadora_Anticipo = extracted.nombre_afianzadora;
+            if (accion === 'borrador' && !updateData.No_Fianza_Anticipo) updateData.No_Fianza_Anticipo = 'BORRADOR (CONTEXTO OK)';
+        } else if (tipo === 'Cumplimiento') {
+            updateData.Estatus_Fianza_Cumplimiento = estatusCalculado;
+            if (extracted.num_fianza && extracted.num_fianza !== 'PENDIENTE') updateData.No_Fianza_Cumplimiento = extracted.num_fianza;
+            if (extracted.monto_documento) updateData.Monto_Fianza_Cumplimiento = extracted.monto_documento;
+            if (extracted.nombre_afianzadora) updateData.Nombre_Afianzadora_Cumplimiento = extracted.nombre_afianzadora;
+            if (accion === 'borrador' && !updateData.No_Fianza_Cumplimiento) updateData.No_Fianza_Cumplimiento = 'BORRADOR (CONTEXTO OK)';
+        } else if (tipo === 'Vicios_Ocultos' || tipo === 'Vicios Ocultos') {
+            updateData.Estatus_Fianza_Vicios_Ocultos = estatusCalculado;
+            if (extracted.num_fianza && extracted.num_fianza !== 'PENDIENTE') updateData.No_Fianza_Vicios_Ocultos = extracted.num_fianza;
+            if (extracted.monto_documento) updateData.Monto_Fianza_Vicios_Ocultos = extracted.monto_documento;
+            if (extracted.nombre_afianzadora) updateData.Nombre_Afianzadora_Vicios_Ocultos = extracted.nombre_afianzadora;
+            if (accion === 'borrador' && !updateData.No_Fianza_Vicios_Ocultos) updateData.No_Fianza_Vicios_Ocultos = 'BORRADOR (CONTEXTO OK)';
+        }
+
+        const res = actualizarDatosContrato(idContrato, updateData);
+        if (!res.success) throw new Error(res.error);
+
+        // Registrar en el log de actividad
+        registrarLogActividad(idContrato, `Validación Fianza ${tipo}: ${estatusCalculado}. IA Peritaje completado.`);
+
+        return generarRespuesta(true, { idContrato, tipo, estatus: estatusCalculado });
+    } catch (error) {
+        console.error("Error en actualizarFianzaDesdeIA:", error);
+        return generarRespuesta(false, error.message, nombreFuncion);
+    }
+}
+
+/**
+ * Actualiza el estatus de una fianza a BORRADOR de forma granular.
+ * @param {string} idContrato - ID del contrato.
+ * @param {string} tipo - Tipo de fianza ('Anticipo', 'Cumplimiento', 'Vicios Ocultos').
+ * @returns {Object} Respuesta estandarizada.
+ */
+function actualizarEstatusFianzaBorrador(idContrato, tipo) {
+    const nombreFuncion = "actualizarEstatusFianzaBorrador";
+    try {
+        if (!idContrato) throw new Error("ID de contrato no proporcionado.");
+        if (!tipo) throw new Error("Tipo de fianza no proporcionado.");
+
+        let updateData = {};
+        if (tipo === 'Anticipo') {
+            updateData.Estatus_Fianza_Anticipo = 'BORRADOR';
+        } else if (tipo === 'Cumplimiento') {
+            updateData.Estatus_Fianza_Cumplimiento = 'BORRADOR';
+        } else if (tipo === 'Vicios_Ocultos' || tipo === 'Vicios Ocultos') {
+            updateData.Estatus_Fianza_Vicios_Ocultos = 'BORRADOR';
+        }
+
+        const res = actualizarDatosContrato(idContrato, updateData);
+        if (!res.success) throw new Error(res.error);
+
+        registrarLogActividad(idContrato, `Fianza ${tipo} marcada como BORRADOR.`);
+
+        return generarRespuesta(true, { idContrato, tipo, estatus: 'BORRADOR' });
+    } catch (error) {
+        console.error("Error en actualizarEstatusFianzaBorrador:", error);
+        return generarRespuesta(false, error.message, nombreFuncion);
+    }
+}
+
+/**
+ * Registra una acción en la tabla Log_Actividad.
+ */
+function registrarLogActividad(idContrato, detalles) {
+    try {
+        const log = {
+            ID_Usuario: 'SISTEMA_IA', // Identificador genérico para acciones de IA
+            Accion: 'LOG_SISTEMA',
+            Tabla_Afectada: 'Contratos',
+            Timestamp: new Date(),
+            Detalles: `ID_Contrato: ${idContrato} | ${detalles}`
+        };
+        dbInsert('Log_Actividad', log);
+    } catch (e) {
+        console.error("Error registrando log:", e);
+    }
+}
+
+// Alias para evitar errores por typos entre "Activity" y "Actividad"
+function registrarLogActivity(idContrato, detalles) {
+    registrarLogActividad(idContrato, detalles);
+}
+
