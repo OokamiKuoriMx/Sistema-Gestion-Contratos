@@ -105,6 +105,137 @@ function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pd
 }
 
 /**
+ * Clasificador Robusto Multidocumento
+ * Escanea el texto y determina el tipo de documento legal/administrativo.
+ */
+function clasificarDocumentoRobusto(textoPDF) {
+  if (!textoPDF) return { tipoDocumento: 'DESCONOCIDO', confianzaPorcentaje: 0, numeroContratoIdentificado: null, esValido: false };
+  // Normalización estricta: todo a mayúsculas y espacios uniformes
+  const textoNormalizado = String(textoPDF).toUpperCase().replace(/\s+/g, ' ');
+
+  // 1. Matriz de huellas dactilares (Palabras clave únicas por documento)
+  const huellas = {
+    'CAF': [
+      "CONVENIO DE APOYO FINANCIERO",
+      "FONADIN",
+      "BANOBRAS",
+      "UNIDAD DE BANCA DE INVERSIÓN",
+      "DELEGADO FIDUCIARIO"
+    ],
+    'Contratos': [
+      "CONTRATO DE SERVICIOS RELACIONADOS CON OBRA PÚBLICA",
+      "DIRECCIÓN GENERAL DE DESARROLLO CARRETERO",
+      "PLURIANUAL CON CARÁCTER NACIONAL",
+      "EL CONTRATISTA",
+      "LA DEPENDENCIA"
+    ],
+    'Matriz_Insumos': [
+      "ANALISIS DE PRECIOS UNITARIOS",
+      "P. UNITARIO",
+      "CARGOS ADICIONALES",
+      "MANO DE OBRA GRAVABLE",
+      "FORMA E5",
+      "INSUMOS QUE INTERVIENEN EN LA INTEGRACIÓN"
+    ],
+    'Fianza': [
+      "POLIZA DE FIANZA",
+      "COMISION NACIONAL DE SEGUROS Y FIANZAS",
+      "INSTITUCIÓN DE GARANTÍAS",
+      "FIADORA",
+      "MONTO TOTAL DE LA FIANZA"
+    ],
+    'Programa': [
+      "PROGRAMA DE TRABAJO",
+      "DIAS NATURALES",
+      "ESTIMACIÓN 1",
+      "FECHA DE CONTRATO",
+      "PLAZO:"
+    ]
+  };
+
+  // 2. Variables para rastrear al ganador
+  let mejorCategoria = 'DESCONOCIDO';
+  let puntajeMaximo = 0;
+  let confianzaGanadora = 0;
+
+  // 3. Motor de evaluación
+  for (const [categoria, palabrasClave] of Object.entries(huellas)) {
+    let puntosObtenidos = 0;
+    
+    // Contar cuántas palabras clave se encontraron en el texto
+    palabrasClave.forEach(patron => {
+      if (textoNormalizado.includes(patron)) {
+        puntosObtenidos++;
+      }
+    });
+
+    // Actualizar el ganador si esta categoría tiene más puntos
+    if (puntosObtenidos > puntajeMaximo) {
+      puntajeMaximo = puntosObtenidos;
+      mejorCategoria = categoria;
+      confianzaGanadora = (puntosObtenidos / palabrasClave.length) * 100;
+    }
+  }
+
+  // 4. Umbral de seguridad (Mínimo 2 coincidencias para evitar falsos positivos)
+  if (puntajeMaximo < 2) {
+    mejorCategoria = 'DESCONOCIDO';
+    confianzaGanadora = 0;
+  }
+
+  // 5. Extracción temprana de metadatos transversales (si aplican)
+  let numContrato = null;
+  const matchContrato = textoNormalizado.match(/(?:CONTRATO N[UÚ]MERO|CONTRATO:?)\s*([A-Z0-9\-]+)/);
+  if (matchContrato) {
+    numContrato = matchContrato[1].trim();
+  }
+
+  // 6. Retorno de la decisión
+  return {
+    tipoDocumento: mejorCategoria,
+    confianzaPorcentaje: typeof confianzaGanadora === 'number' ? confianzaGanadora.toFixed(2) : "0.00",
+    numeroContratoIdentificado: numContrato,
+    esValido: mejorCategoria !== 'DESCONOCIDO'
+  };
+}
+
+/**
+ * Switch de Enrutamiento Maestro Integrado
+ * Despacha la extracción a funciones especializadas o, en su defecto, pide ayuda al agente de IA.
+ */
+function procesarDocumentoEntrante(textoExtraido, base64Data = null, mimeType = null, contextJson = null) {
+  const clasificacion = clasificarDocumentoRobusto(textoExtraido);
+  console.log("Documento clasificado por matriz de pesos como: " + clasificacion.tipoDocumento + " con " + clasificacion.confianzaPorcentaje + "% de confianza.");
+
+  let extContext = contextJson;
+  if (typeof extContext === 'string') {
+      try { extContext = JSON.parse(extContext); } catch (e) { extContext = {}; }
+  } else if (!extContext) {
+      extContext = {};
+  }
+
+  if (clasificacion.numeroContratoIdentificado) {
+      extContext.Numero_Contrato_Identificado = clasificacion.numeroContratoIdentificado;
+  }
+
+  const strContext = Object.keys(extContext).length > 0 ? JSON.stringify(extContext) : null;
+
+  switch (clasificacion.tipoDocumento) {
+    case 'CAF':
+    case 'Contratos':
+    case 'Matriz_Insumos':
+    case 'Fianza':
+    case 'Programa':
+      // Usar nuestro motor IA actual pre-enrutado a la tabla correcta
+      return procesarDocumentoConIA(base64Data, mimeType, clasificacion.tipoDocumento, strContext);
+      
+    default:
+      // Derivar al agente_ia.gs al flujo libre inferido
+      return procesarDocumentoConIA(base64Data, mimeType, null, "Intenta determinar qué tipo de documento es y extrae sus datos principales. " + (strContext || ""));
+  }
+}
+
+/**
  * Normaliza un texto para comparaciones (quita acentos, puntuación, espacios extra y convierte a minúsculas)
  */
 function normalizeText(text) {
