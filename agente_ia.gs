@@ -92,7 +92,8 @@ function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pd
         }
     }
 
-    const models = ["gemini-3.1-pro", "gemini-2.5-flash"];
+    // CÓDIGO CORREGIDO: Usando los modelos Flash vigentes en la API
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
     let lastError = null;
 
     for (const modelId of models) {
@@ -580,23 +581,23 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             }
         }
 
-        // 2. Seleccionar el Modelo y Fallbacks (Optimización de Resiliencia y Costos)
+        // 2. Seleccionar el Modelo y Fallbacks (Actualizado a modelos vigentes)
         const modelsToTry = (function () {
-            // Alta Complejidad (Tablas y Razonamiento Espacial)
-            if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') return ["gemini-2.0-pro", "gemini-1.5-pro"];
-            if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') return ["gemini-3.1-pro", "gemini-2.5-pro"];
+            // Alta Complejidad (Tablas y Razonamiento Espacial profundo)
+            if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') return ["gemini-2.5-pro", "gemini-2.5-flash"];
+            if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') return ["gemini-2.5-pro", "gemini-2.5-flash"];
 
-            // Media Complejidad (Prosa y Extracción Mixta)
-            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') return ["gemini-2.5-flash", "gemini-1.5-flash"];
-            if (targetTable === 'Contratos') return ["gemini-2.5-flash", "gemini-1.5-flash"];
-            if (targetTable === 'Catalogo_Conceptos' || targetTable === 'Catalogo') return ["gemini-3.0-flash", "gemini-2.5-flash"];
-            if (targetTable === 'Estimaciones' || targetTable === 'Facturas') return ["gemini-3.0-flash", "gemini-2.5-flash"];
+            // Media Complejidad (Prosa legal y Extracción Mixta)
+            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') return ["gemini-2.5-flash", "gemini-2.0-flash"];
+            if (targetTable === 'Contratos') return ["gemini-2.5-flash", "gemini-2.0-flash"];
+            if (targetTable === 'Catalogo_Conceptos' || targetTable === 'Catalogo') return ["gemini-2.5-flash", "gemini-2.0-flash"];
+            if (targetTable === 'Estimaciones' || targetTable === 'Facturas') return ["gemini-2.5-flash", "gemini-2.0-flash"];
 
-            // Baja Complejidad (Texto legal plano)
-            if (targetTable === 'Fianza') return ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite"];
-
+            // Baja Complejidad (Texto legal plano corto)
+            if (targetTable === 'Fianza') return ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+            
             // Default Fallback
-            return ["gemini-3-flash", "gemini-2.5-flash"];
+            return ["gemini-2.5-flash", "gemini-2.0-flash"];
         })();
 
         let systemPrompt = (function () {
