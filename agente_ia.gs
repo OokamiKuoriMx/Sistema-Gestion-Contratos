@@ -1607,7 +1607,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                         // Acualizar mapa de sesión para resolución instantánea de hijos (APUs/Programa)
                         if (tabla === 'Catalogo_Conceptos' && dataMerged.Clave) {
-                            mapaConceptosReales[dataMerged.Clave.toString().toUpperCase()] = match[pkName];
+                            mapaConceptosReales[dataMerged.Clave.toString().trim().toUpperCase()] = match[pkName];
                         }
 
                         // Sincronizar contexto global si es un contrato
