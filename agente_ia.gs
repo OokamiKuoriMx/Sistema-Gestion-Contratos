@@ -49,10 +49,56 @@ Ejemplo: {"clase": "Matriz_Insumos", "razon_visual": "Contiene tablas densas de 
 `;
 
 /**
+ * Extrae texto de las primeras páginas de un PDF usando el motor OCR de Google Drive
+ * (Debe estar activada la API Advanced "Drive" v2 o v3 en Apps Script)
+ */
+function extraerTextoRapidoPDF(base64Content, mimeType) {
+    try {
+        if (!mimeType || (!mimeType.includes('pdf') && !mimeType.includes('image'))) return "";
+        
+        let cleanBase64 = base64Content;
+        if (base64Content.includes('base64,')) {
+            cleanBase64 = base64Content.split('base64,')[1];
+        }
+        
+        const blob = Utilities.newBlob(Utilities.base64Decode(cleanBase64), mimeType, "temp_ocr_doc");
+        
+        const resource = {
+            name: blob.getName(),
+            mimeType: mimeType
+        };
+        
+        // Requiere habilitar la API Advanced de Drive (v3) en Apps Script (como en tu captura)
+        const file = Drive.Files.create(resource, blob, { ocr: true, ocrLanguage: "es" });
+        const doc = DocumentApp.openById(file.id);
+        const text = doc.getBody().getText();
+        
+        DriveApp.getFileById(file.id).setTrashed(true);
+        
+        // Retornar solo el inicio del documento (aprox 3-4 cuartillas para no saturar tokens ni memoria)
+        return text.substring(0, 6000);
+    } catch (e) {
+        console.warn("OCR rápido no disponible o fallido (Drive API inactiva o error de cuota):", e);
+        return "";
+    }
+}
+
+/**
  * Clasifica un documento usando IA para identificar si es Contrato, CAF, Programa o Matriz.
- * Implementa un mecanismo de fallback si el modelo principal falla.
+ * Implementa un mecanismo de fallback si el modelo principal falla o se puede preclasificar.
  */
 function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pdf") {
+    // 1. FAST TRACK: Intentar extraer texto local y aplicar matriz robusta ANTES de gastar tokens
+    const textoExtraido = extraerTextoRapidoPDF(base64Content, mimeType);
+    if (textoExtraido && textoExtraido.trim().length > 50) {
+        const preClasificacion = clasificarDocumentoRobusto(textoExtraido);
+        if (preClasificacion.esValido && preClasificacion.tipoDocumento !== 'DESCONOCIDO') {
+            const razon = "Clasificado localmente (" + preClasificacion.confianzaPorcentaje + "%) mediante lectura OCR y matriz de huellas antes de usar IA.";
+            console.log("FAST-TRACK Clasificación Exitosa: " + preClasificacion.tipoDocumento + " para archivo: " + filename);
+            return { success: true, clase: preClasificacion.tipoDocumento, razon: razon };
+        }
+    }
+
     const models = ["gemini-3.1-pro", "gemini-2.5-flash"];
     let lastError = null;
 
