@@ -1070,7 +1070,8 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
         ultimosIdsInsertados['Contratos'] = globalIdContrato;
         // Pre-cargar catálogos para resolución instantánea (Evita dbSelect masivos)
         const catExistente = dbSelect('Catalogo_Conceptos', { ID_Contrato: globalIdContrato });
-        if (catExistente) catExistente.forEach(c => { if (c.Clave) mapaConceptosReales[c.Clave.toString().toUpperCase()] = c.ID_Concepto; });
+        // CORRECCIÓN: Agregar .trim() para evitar falsos negativos por espacios en blanco extraños del PDF
+        if (catExistente) catExistente.forEach(c => { if (c.Clave) mapaConceptosReales[c.Clave.toString().trim().toUpperCase()] = c.ID_Concepto; });
 
         // Pre-cargar periodos si existen programas
         const progExistente = dbSelect('Programa', { ID_Contrato: globalIdContrato });
@@ -1904,9 +1905,11 @@ function analizarCambiosIA(datos) {
                         idContratoCtx = match.ID_Contrato;
                     }
 
-                    const camposProtegidos = (tabla === 'Catalogo_Conceptos')
-                        ? ['Clave', 'Descripcion', 'Unidad']
-                        : [];
+                    // CORRECCIÓN: Permitir que la UI muestre los cambios financieros si vienen de la APU
+                    const esActualizacionDesdeAPU = (tabla === 'Catalogo_Conceptos' && (tipo === 'MATRIZ_INSUMOS' || tipo === 'APU'));
+                    const camposProtegidos = esActualizacionDesdeAPU 
+                        ? ['Clave'] 
+                        : (tabla === 'Catalogo_Conceptos' ? ['Clave', 'Descripcion', 'Unidad'] : []);
 
                     headers.forEach(h => {
                         if (h.startsWith('ID_') || h === 'Link_Sharepoint') return;
