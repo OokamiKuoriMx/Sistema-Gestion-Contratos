@@ -595,7 +595,7 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
 
             // Baja Complejidad (Texto legal plano corto)
             if (targetTable === 'Fianza') return ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
-            
+
             // Default Fallback
             return ["gemini-2.5-flash", "gemini-2.0-flash"];
         })();
@@ -695,7 +695,8 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             contents: [{ parts: partsArr }],
             generationConfig: {
                 temperature: 0.1,
-                response_mime_type: "application/json"
+                response_mime_type: "application/json",
+                maxOutputTokens: 8192 // <--- AÑADIR ESTA LÍNEA (Capacidad pulmonar máxima)
             }
         };
 
@@ -712,7 +713,7 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
         for (const modelId of modelsToTry) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`;
-                
+
                 // === NUEVO SISTEMA ANTI-TIMEOUT (REINTENTOS) ===
                 let response;
                 let maxRetries = 2; // Intentará hasta 3 veces por modelo
@@ -729,7 +730,7 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
                             throw new Error("Timeout de red al conectar con Gemini después de " + attempt + " intentos.");
                         }
                         // Esperar 2 segundos antes de reintentar (Retroceso)
-                        Utilities.sleep(2000 * attempt); 
+                        Utilities.sleep(2000 * attempt);
                         console.warn("Reintentando conexión con modelo " + modelId + "... (Intento " + attempt + ")");
                     }
                 }
@@ -757,15 +758,36 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
 
         // --- LOG PROVISIONAL DE EXTRACCIÓN ---
         console.log("RAW_AI_EXTRACTION [" + (targetTable || "GENERAL") + "]:", llmString);
-
+        
         let extraction;
+        let jsonLimpio = limpiarJSONIA(llmString);
+
         try {
-            extraction = JSON.parse(limpiarJSONIA(llmString));
+            extraction = JSON.parse(jsonLimpio);
         } catch (errJson) {
-            console.error("Error parsing AI JSON:", errJson, "Raw text:", llmString);
-            // Intento desesperado: Si está truncado pero el inicio es válido, intentar extraer lo que se pueda regex
-            throw new Error("El documento es demasiado complejo y la respuesta de la IA contiene errores de formato (JSON Malformed). Por favor, intenta procesar menos páginas a la vez.");
+            console.warn("JSON Malformed detectado. Iniciando protocolo de rescate de datos...");
+            
+            try {
+                // 1. Limpiar cualquier fragmento incompleto al final (ej. una coma o llave abierta a medias)
+                let rescatado = jsonLimpio.replace(/,\s*(?:"[^"]*"?|[^{}\[\]]*)*$/, '');
+                
+                // 2. Si se quedó a la mitad de un texto, forzar cierre de comillas
+                if ((rescatado.match(/"/g) || []).length % 2 !== 0) rescatado += '"';
+
+                // 3. Forzar el cierre de la jerarquía de las matrices de APU
+                if (rescatado.includes('"insumos": [')) rescatado += ']';
+                if (rescatado.includes('"conceptos": [')) rescatado += ']';
+                if (rescatado.includes('"datos_extraidos": {')) rescatado += '}';
+                rescatado += '}'; // Cierre maestro del JSON
+
+                extraction = JSON.parse(rescatado);
+                console.log("¡Rescate de JSON exitoso! Se guardará lo procesado hasta el corte.");
+            } catch (errRescate) {
+                console.error("Fallo definitivo en el rescate:", errRescate, "Texto truncado:", jsonLimpio);
+                throw new Error("El documento (APU) es demasiado denso. La IA extrajo tanta información que superó su límite máximo de memoria. SUGERENCIA: Divide el PDF del APU en partes (ej. bloques de 5 páginas) y súbelas al orquestador; el sistema las unirá inteligentemente al mismo contrato.");
+            }
         }
+
         const datosFinales = extraction.datos_extraidos || extraction.datos || extraction;
 
         // --- VALIDACIÓN DE GUARDIA DE SEGURIDAD (EXTRACCIÓN) ---
@@ -1021,7 +1043,17 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             }));
         }
     } else if (tipo === 'PROGRAMA') {
-        const nombreProg = datos.Nombre_Programa || datos.Programa || "Programa General de Obra";
+        // --- MODIFICACIÓN 1: Concatenar el número de contrato al nombre del programa ---
+        let numeroContratoStr = "";
+        if (globalIdContrato) {
+            const contDB = dbSelect('Contratos', { ID_Contrato: globalIdContrato });
+            if (contDB && contDB.length > 0 && contDB[0].Numero_Contrato) {
+                numeroContratoStr = " " + contDB[0].Numero_Contrato;
+            } else {
+                numeroContratoStr = " " + globalIdContrato;
+            }
+        }
+        const nombreProg = "Programa General de Obra del Contrato No. " + numeroContratoStr;
 
         datos.Programa = [{
             ID_Contrato: globalIdContrato,
@@ -1040,11 +1072,14 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             datos.Periodos_Programados.forEach((per, idx) => {
                 const nombrePer = String(per.Nombre_Periodo || "").trim().toUpperCase();
 
+                // --- MODIFICACIÓN 2: Inyectar apóstrofe para forzar formato de Texto ---
+                const nombrePerTextoSeguro = "'" + nombrePer;
+
                 // 1. Guardar Periodo (Linkage will happen in the loop via ultimosIdsInsertados or natural match)
                 const perObj = {
-                    ID_Numero_Programa_TmpLink: nombreProg, // Temporary link to find parent by name in loop
+                    ID_Numero_Programa_TmpLink: nombreProg,
                     Numero_Periodo: idx + 1,
-                    Periodo: nombrePer,
+                    Periodo: nombrePerTextoSeguro, // Se guarda con apóstrofe
                     Fecha_Inicio: per.Fecha_Inicio,
                     Fecha_Termino: per.Fecha_Termino || per.Fecha_Fin
                 };
@@ -1089,10 +1124,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             // LOGICA VIEJA
             datos.Programa_Periodo = datos.Periodos_Identificados.map((p, i) => {
                 const esObjeto = typeof p === 'object';
+                const nombrePerOriginal = (esObjeto ? p.Nombre : p).trim().toUpperCase();
                 return {
                     ID_Numero_Programa_TmpLink: nombreProg,
                     Numero_Periodo: i + 1,
-                    Periodo: (esObjeto ? p.Nombre : p).trim().toUpperCase(),
+                    Periodo: "'" + nombrePerOriginal, // Seguro para DB
                     Fecha_Inicio: esObjeto ? p.Fecha_Inicio : null,
                     Fecha_Termino: esObjeto ? p.Fecha_Termino : null
                 };
@@ -1460,10 +1496,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                         // 3. Resolver ID_Programa_Periodo (NORMALIZADO)
                         if (!registro.ID_Programa_Periodo && (registro.Periodo_Temp || registro.Periodo)) {
-                            const perLabel = (registro.Periodo_Temp || registro.Periodo).toString().trim().toUpperCase();
+                            // Ignorar apóstrofes temporales en la resolución
+                            const perLabel = (registro.Periodo_Temp || registro.Periodo).toString().replace(/^'/, '').trim().toUpperCase();
 
                             // Intentar recuperar el ID real insertado en esta sesión para este nombre de periodo
-                            const keyNormalizada = Object.keys(mapaPeriodosReales).find(k => k.trim().toUpperCase() === perLabel);
+                            const keyNormalizada = Object.keys(mapaPeriodosReales).find(k => k.replace(/^'/, '').trim().toUpperCase() === perLabel);
 
                             if (keyNormalizada && mapaPeriodosReales[keyNormalizada]) {
                                 registro.ID_Programa_Periodo = mapaPeriodosReales[keyNormalizada].ID_Programa_Periodo;
@@ -1472,10 +1509,10 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                                 const idProgPadre = ultimosIdsInsertados['Programa'] || (dbSelect('Programa', { ID_Contrato: idContratoContextoActual })[0] || {}).ID_Numero_Programa;
                                 if (idProgPadre) {
                                     const periodosDB = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProgPadre });
-                                    let matchDB = periodosDB.find(p => (p.Periodo || "").toString().trim().toUpperCase() === perLabel);
+                                    let matchDB = periodosDB.find(p => (p.Periodo || "").toString().replace(/^'/, '').trim().toUpperCase() === perLabel);
 
                                     if (!matchDB) {
-                                        matchDB = periodosDB.find(p => (p.Periodo || "").toString().trim().toUpperCase().includes(perLabel));
+                                        matchDB = periodosDB.find(p => (p.Periodo || "").toString().replace(/^'/, '').trim().toUpperCase().includes(perLabel));
                                     }
 
                                     if (matchDB) registro.ID_Programa_Periodo = matchDB.ID_Programa_Periodo;
@@ -1715,23 +1752,24 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             }
                         } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa && registro.Periodo) {
                             // SmartMatch reforzado: El periodo es único dentro de su programa padre
-                            const perLabelMatch = registro.Periodo.trim().toUpperCase();
+                            // Removemos el apóstrofe para comparar la cadena limpiamente
+                            const perLabelMatch = registro.Periodo.toString().replace(/^'/, '').trim().toUpperCase();
                             const normLabel = normalizeText(perLabelMatch);
 
-                            // 1. Match en Caché Local (Filtrando por el programa padre específico)
+                            // 1. Match en Caché Local
                             match = (cacheLocal.Programa_Periodo || []).find(p =>
                                 p.ID_Numero_Programa === registro.ID_Numero_Programa &&
-                                normalizeText(p.Periodo) === normLabel
+                                normalizeText((p.Periodo || "").toString().replace(/^'/, '')) === normLabel
                             );
 
                             if (!match) {
                                 const periodosDB = dbSelect('Programa_Periodo', { ID_Numero_Programa: registro.ID_Numero_Programa });
-                                match = periodosDB.find(p => normalizeText(p.Periodo) === normLabel);
+                                match = periodosDB.find(p => normalizeText((p.Periodo || "").toString().replace(/^'/, '')) === normLabel);
                             }
 
                             if (match) {
-                                // Forzar el nombre a la versión normalizada para evitar diferencias en la DB
-                                registro.Periodo = perLabelMatch;
+                                // Mantenemos el apóstrofe para el Update seguro
+                                registro.Periodo = "'" + perLabelMatch;
                             }
                         } else if (tabla === 'Matriz_Insumos' && registro.ID_Concepto && registro.Clave_Insumo) {
                             const resMat = dbSelect('Matriz_Insumos', { ID_Concepto: registro.ID_Concepto, Clave_Insumo: registro.Clave_Insumo });
