@@ -1177,6 +1177,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                 insumosDelConcepto.forEach(ins => {
                     datos.Matriz_Insumos.push({
                         Clave_Concepto_Padre: c.Clave_Concepto,
+                        Descripcion_Concepto_Padre: c.Descripcion_Concepto,
                         Tipo_Insumo: ins.Tipo_Insumo,
                         Clave_Insumo: ins.Clave_Insumo,
                         Descripcion: ins.Descripcion,
@@ -1192,6 +1193,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             if (datos.insumos && datos.Matriz_Insumos.length === 0) {
                 datos.Matriz_Insumos = datos.insumos.map(ins => ({
                     Clave_Concepto_Padre: ins.Clave_Concepto_Padre,
+                    Descripcion_Concepto_Padre: ins.Descripcion_Concepto_Padre || ins.Descripcion_Padre,
                     Tipo_Insumo: ins.Tipo_Insumo,
                     Clave_Insumo: ins.Clave_Insumo,
                     Descripcion: ins.Descripcion,
@@ -1294,18 +1296,55 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
     const ultimosIdsInsertados = {}; // Para linking automático de hijos sin ID temporal
     const mapaPeriodosReales = {}; // NUEVO: Para vincular periodos por nombre sin usar IDs temporales
     const mapaConceptosReales = {}; // NUEVO: Para vincular conceptos por clave sin usar IDs temporales
+    const mapaConceptosPorDescripcion = {}; // Soporte para APU cuando la clave no coincide exactamente
     if (globalIdContrato) {
         ultimosIdsInsertados['Contratos'] = globalIdContrato;
         // Pre-cargar catálogos para resolución instantánea (Evita dbSelect masivos)
         const catExistente = dbSelect('Catalogo_Conceptos', { ID_Contrato: globalIdContrato });
         // CORRECCIÓN: Agregar .replace(/\\s+/g, '') para evitar falsos negativos por espacios en blanco extraños del PDF o IA
-        if (catExistente) catExistente.forEach(c => { if (c.Clave) mapaConceptosReales[c.Clave.toString().replace(/\\s+/g, '').toUpperCase()] = c.ID_Concepto; });
+        if (catExistente) catExistente.forEach(c => {
+            if (c.Clave) mapaConceptosReales[c.Clave.toString().replace(/\s+/g, '').toUpperCase()] = c.ID_Concepto;
+            if (c.Descripcion) mapaConceptosPorDescripcion[normalizeText(c.Descripcion)] = c.ID_Concepto;
+        });
 
         // Pre-cargar periodos si existen programas
         const progExistente = dbSelect('Programa', { ID_Contrato: globalIdContrato });
         if (progExistente) progExistente.forEach(p => {
             const persExistentes = dbSelect('Programa_Periodo', { ID_Numero_Programa: p.ID_Numero_Programa });
-            if (persExistentes) persExistentes.forEach(per => { if (per.Periodo) mapaPeriodosReales[per.Periodo.toString().toUpperCase()] = { ...per }; });
+            if (persExistentes) persExistentes.forEach(per => {
+                if (per.Periodo) {
+                    const periodoKey = per.Periodo.toString().replace(/^'/, '').trim().toUpperCase();
+                    mapaPeriodosReales[periodoKey] = { ...per };
+                }
+            });
+        });
+    }
+
+    if (pContext && Array.isArray(pContext.Catalogo_Contextual)) {
+        pContext.Catalogo_Contextual.forEach(c => {
+            if (!c) return;
+            if (c.Clave) {
+                const claveNorm = String(c.Clave).replace(/\s+/g, '').toUpperCase();
+                if (c.ID_Concepto) {
+                    mapaConceptosReales[claveNorm] = c.ID_Concepto;
+                } else if (globalIdContrato) {
+                    const matchClave = dbSelect('Catalogo_Conceptos', { ID_Contrato: globalIdContrato }).find(cat =>
+                        String(cat.Clave || "").replace(/\s+/g, '').toUpperCase() === claveNorm
+                    );
+                    if (matchClave) mapaConceptosReales[claveNorm] = matchClave.ID_Concepto;
+                }
+            }
+            if (c.Descripcion) {
+                const descNorm = normalizeText(c.Descripcion);
+                if (c.ID_Concepto) {
+                    mapaConceptosPorDescripcion[descNorm] = c.ID_Concepto;
+                } else if (globalIdContrato) {
+                    const matchDesc = dbSelect('Catalogo_Conceptos', { ID_Contrato: globalIdContrato }).find(cat =>
+                        normalizeText(cat.Descripcion || "") === descNorm
+                    );
+                    if (matchDesc) mapaConceptosPorDescripcion[descNorm] = matchDesc.ID_Concepto;
+                }
+            }
         });
     }
 
@@ -1321,9 +1360,15 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     const claveTemp = insumo.Clave_Concepto_Temp || insumo.Clave_Concepto_Padre || insumo.Clave_Padre;
                     if (!insumo.ID_Concepto && claveTemp) {
                         // Buscar el ID en el mapa de conceptos en caché
-                        const claveStr = String(claveTemp).replace(/\\s+/g, '').toUpperCase();
+                        const claveStr = String(claveTemp).replace(/\s+/g, '').toUpperCase();
                         if (mapaConceptosReales[claveStr]) {
                             insumo.ID_Concepto = mapaConceptosReales[claveStr];
+                        }
+                    }
+                    if (!insumo.ID_Concepto && insumo.Descripcion_Concepto_Padre) {
+                        const descPadreNorm = normalizeText(insumo.Descripcion_Concepto_Padre);
+                        if (mapaConceptosPorDescripcion[descPadreNorm]) {
+                            insumo.ID_Concepto = mapaConceptosPorDescripcion[descPadreNorm];
                         }
                     }
                     return insumo;
@@ -1348,6 +1393,14 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                                 // 2. Búsqueda profunda en DB si no estaba en la sesión
                                 const catDB = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoParaResolve });
                                 const matchCat = catDB.find(c => String(c.Clave).replace(/\s+/g, '').toUpperCase() === claveNorm);
+                                if (matchCat) ins.ID_Concepto = matchCat.ID_Concepto;
+                            }
+                        }
+                        if (!ins.ID_Concepto && ins.Descripcion_Concepto_Padre) {
+                            const descPadreNorm = normalizeText(ins.Descripcion_Concepto_Padre);
+                            if (descPadreNorm) {
+                                const catDB = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoParaResolve });
+                                const matchCat = catDB.find(c => normalizeText(c.Descripcion || "") === descPadreNorm);
                                 if (matchCat) ins.ID_Concepto = matchCat.ID_Concepto;
                             }
                         }
@@ -1386,7 +1439,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                         if (registro.Unidad_Medida && !registro.Unidad) registro.Unidad = registro.Unidad_Medida;
 
                         // Antes de decidir si es nuevo o actualización
-                        const claveBusqueda = (registro.Clave_Concepto_Temp || registro.Clave || "").toString().replace(/\\s+/g, '').toUpperCase();
+                        const claveBusqueda = (registro.Clave_Concepto_Temp || registro.Clave || "").toString().replace(/\s+/g, '').toUpperCase();
                         const idExistente = mapaConceptosReales[claveBusqueda];
                         if (idExistente) {
                             // Forzamos el ID para que el sistema sepa que es un UPDATE (UPSERT)
@@ -1438,7 +1491,10 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             const idProg = registro.ID_Programa || ultimosIdsInsertados['Programa'];
                             if (idProg) {
                                 // Buscar periodo por nombre bajo el programa resuelto
-                                const perMatch = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProg }).find(p => normalizeText(p.Periodo) === normalizeText(perName));
+                                const perNameNorm = normalizeText(String(perName || "").replace(/^'/, ''));
+                                const perMatch = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProg }).find(p =>
+                                    normalizeText(String(p.Periodo || "").replace(/^'/, '')) === perNameNorm
+                                );
                                 if (perMatch) registro.ID_Programa_Periodo = perMatch.ID_Programa_Periodo;
                             }
                         }
@@ -1447,31 +1503,40 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     if (tabla === 'Matriz_Insumos') {
                         // Cruzar para obtener el ID_Concepto real usando el mapa de sesión (Súper rápido)
                         if (!registro.ID_Concepto && (registro.Clave_Concepto_Padre || registro.Clave_Padre)) {
-                            const clavePadre = (registro.Clave_Concepto_Padre || registro.Clave_Padre).toString().replace(/\\s+/g, '').toUpperCase();
+                            const clavePadre = (registro.Clave_Concepto_Padre || registro.Clave_Padre).toString().replace(/\s+/g, '').toUpperCase();
                             if (mapaConceptosReales[clavePadre]) {
                                 registro.ID_Concepto = mapaConceptosReales[clavePadre];
                             } else if (idContratoContextoActual) {
                                 // Fallback: Búsqueda de último recurso si no está en mapa de sesión
                                 const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoContextoActual });
-                                const conMatch = catalogo.find(c => String(c.Clave).replace(/\\s+/g, '').toUpperCase() === clavePadre);
+                                const conMatch = catalogo.find(c => String(c.Clave).replace(/\s+/g, '').toUpperCase() === clavePadre);
+                                if (conMatch) registro.ID_Concepto = conMatch.ID_Concepto;
+                            }
+                        }
+                        if (!registro.ID_Concepto && registro.Descripcion_Concepto_Padre && idContratoContextoActual) {
+                            const descPadreNorm = normalizeText(registro.Descripcion_Concepto_Padre);
+                            if (descPadreNorm) {
+                                const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoContextoActual });
+                                const conMatch = catalogo.find(c => normalizeText(c.Descripcion || "") === descPadreNorm);
                                 if (conMatch) registro.ID_Concepto = conMatch.ID_Concepto;
                             }
                         }
                         // Limpiar campos temporales que no existen en el esquema
                         delete registro.Clave_Concepto_Padre;
                         delete registro.Clave_Padre;
+                        delete registro.Descripcion_Concepto_Padre;
                         delete registro.ID_Contrato; // No existe en esquema Matriz_Insumos
                     }
                     if (tabla === 'Programa_Ejecucion') {
                         // 1. Resolver ID_Concepto (Doble Match: Clave + Descripción)
                         if (!registro.ID_Concepto && (registro.Clave_Concepto_Temp || registro.Clave)) {
-                            const clave = (registro.Clave_Concepto_Temp || registro.Clave).toString().replace(/\\s+/g, '').toUpperCase();
+                            const clave = (registro.Clave_Concepto_Temp || registro.Clave).toString().replace(/\s+/g, '').toUpperCase();
                             if (mapaConceptosReales[clave]) {
                                 registro.ID_Concepto = mapaConceptosReales[clave];
                             } else if (idContratoContextoActual) {
                                 // Intento 1: Por Clave (Insensible)
                                 const catalogo = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoContextoActual });
-                                let matchClave = catalogo.find(c => String(c.Clave).replace(/\\s+/g, '').toUpperCase() === clave);
+                                let matchClave = catalogo.find(c => String(c.Clave).replace(/\s+/g, '').toUpperCase() === clave);
 
                                 if (matchClave) {
                                     registro.ID_Concepto = matchClave.ID_Concepto;
@@ -1596,11 +1661,19 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             }
                             // 2. Si venimos de un padre que acabamos de insertar/mapear
                             else if (ultimosIdsInsertados[tablaPadre]) {
+                                if (tabla === 'Matriz_Insumos' && llaveForanea === 'ID_Concepto') {
+                                    return;
+                                }
                                 if (!registro[llaveForanea]) {
                                     registro[llaveForanea] = ultimosIdsInsertados[tablaPadre];
                                 }
                             }
                         });
+                    }
+
+                    if (tabla === 'Matriz_Insumos' && !registro.ID_Concepto) {
+                        console.warn("Matriz_Insumos omitido por no resolver ID_Concepto:", JSON.stringify(registro));
+                        return;
                     }
 
                     if (tabla === 'Estimaciones' && registro.ID_Contrato) {
@@ -1708,7 +1781,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                             // 1. Match en Caché Local
                             match = (cacheLocal.Catalogo_Conceptos || []).find(c => {
-                                const matchClave = registro.Clave && String(c.Clave).replace(/\\s+/g, '').toUpperCase() === String(registro.Clave).replace(/\\s+/g, '').toUpperCase();
+                                const matchClave = registro.Clave && String(c.Clave).replace(/\s+/g, '').toUpperCase() === String(registro.Clave).replace(/\s+/g, '').toUpperCase();
                                 const matchDesc = descNorm && normalizeText(c.Descripcion) === descNorm;
                                 return c.ID_Contrato === registro.ID_Contrato && (matchClave || matchDesc);
                             });
@@ -1742,18 +1815,21 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             }
                         } else if (tabla === 'Programa' && registro.ID_Contrato) {
                             // SmartMatch reforzado: ID_Contrato + Tipo_Programa + Nombre del Programa
+                            const programaNorm = normalizeText(registro.Programa || "");
+                            const tipoProgramaNorm = normalizeText(registro.Tipo_Programa || "");
                             match = (cacheLocal.Programa || []).find(p =>
-                                p.ID_Contrato === registro.ID_Contrato &&
-                                (!registro.Tipo_Programa || p.Tipo_Programa === registro.Tipo_Programa) &&
-                                (!registro.Programa || p.Programa === registro.Programa)
+                                String(p.ID_Contrato) === String(registro.ID_Contrato) &&
+                                (!tipoProgramaNorm || normalizeText(p.Tipo_Programa || "") === tipoProgramaNorm)
                             );
 
                             if (!match) {
-                                const condProg = { ID_Contrato: registro.ID_Contrato };
-                                if (registro.Tipo_Programa) condProg.Tipo_Programa = registro.Tipo_Programa;
-                                if (registro.Programa) condProg.Programa = registro.Programa;
-                                const resProg = dbSelect('Programa', condProg);
-                                if (resProg && resProg.length > 0) match = resProg[0];
+                                const resProg = dbSelect('Programa', { ID_Contrato: registro.ID_Contrato }) || [];
+                                match = resProg.find(p =>
+                                    (!tipoProgramaNorm || normalizeText(p.Tipo_Programa || "") === tipoProgramaNorm) &&
+                                    (!programaNorm || normalizeText(p.Programa || "") === programaNorm)
+                                ) || resProg.find(p =>
+                                    !tipoProgramaNorm || normalizeText(p.Tipo_Programa || "") === tipoProgramaNorm
+                                ) || null;
                             }
                         } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa && registro.Periodo) {
                             // SmartMatch reforzado: El periodo es único dentro de su programa padre
@@ -1763,7 +1839,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                             // 1. Match en Caché Local
                             match = (cacheLocal.Programa_Periodo || []).find(p =>
-                                p.ID_Numero_Programa === registro.ID_Numero_Programa &&
+                                String(p.ID_Numero_Programa) === String(registro.ID_Numero_Programa) &&
                                 normalizeText((p.Periodo || "").toString().replace(/^'/, '')) === normLabel
                             );
 
@@ -1857,7 +1933,10 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                         // Acualizar mapa de sesión para resolución instantánea de hijos (APUs/Programa)
                         if (tabla === 'Catalogo_Conceptos' && dataMerged.Clave) {
-                            mapaConceptosReales[dataMerged.Clave.toString().replace(/\\s+/g, '').toUpperCase()] = match[pkName];
+                            mapaConceptosReales[dataMerged.Clave.toString().replace(/\s+/g, '').toUpperCase()] = match[pkName];
+                        }
+                        if (tabla === 'Catalogo_Conceptos' && dataMerged.Descripcion) {
+                            mapaConceptosPorDescripcion[normalizeText(dataMerged.Descripcion)] = match[pkName];
                         }
 
                         // Sincronizar contexto global si es un contrato
@@ -1873,7 +1952,8 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                         // Actualizar mapa de sesión para resolución instantánea
                         if (tabla === 'Programa_Periodo' && dataMerged.Periodo) {
-                            mapaPeriodosReales[dataMerged.Periodo.toString().toUpperCase()] = { ...dataMerged };
+                            const periodoKey = dataMerged.Periodo.toString().replace(/^'/, '').trim().toUpperCase();
+                            mapaPeriodosReales[periodoKey] = { ...dataMerged };
                         }
 
                         // Actualizar Caché Local
@@ -1909,6 +1989,9 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                                 // CORRECCIÓN: Se agrega .replace(/\s+/g, '') para homologar las claves sin espacios
                                 mapaConceptosReales[registro.Clave.toString().replace(/\s+/g, '').toUpperCase()] = newId;
                             }
+                            if (tabla === 'Catalogo_Conceptos' && registro.Descripcion) {
+                                mapaConceptosPorDescripcion[normalizeText(registro.Descripcion)] = newId;
+                            }
 
                             // Sincronizar contexto global si es un contrato
                             if (tabla === 'Contratos') {
@@ -1923,7 +2006,8 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                             // NUEVO: Registrar en el mapa de periodos por nombre (OBJETO COMPLETO PARA FECHAS)
                             if (tabla === 'Programa_Periodo' && registro.Periodo) {
-                                mapaPeriodosReales[registro.Periodo] = { ...registro, ID_Programa_Periodo: newId };
+                                const periodoKey = registro.Periodo.toString().replace(/^'/, '').trim().toUpperCase();
+                                mapaPeriodosReales[periodoKey] = { ...registro, ID_Programa_Periodo: newId };
                             }
 
                             // Actualizar Caché Local para matching inmediato de siguientes registros en el mismo loop

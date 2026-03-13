@@ -2816,6 +2816,12 @@
                     reader.readAsDataURL(file);
                 });
 
+                let mimeType = file.type || 'application/pdf';
+                const fileName = (file.name || '').toLowerCase();
+                if ((!mimeType || mimeType === 'application/octet-stream') && (fileName.endsWith('.xlsx') || fileName.endsWith('.xls'))) {
+                    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                }
+
                 // Inyectar contexto según el paso
                 let contextParaIA = {};
                 if (idContratoExtraido) contextParaIA.ID_Contrato = idContratoExtraido;
@@ -2827,7 +2833,7 @@
                 }
 
                 // Procesar silenciosamente y capturar resultados
-                const resultado = await procesarPasoBatchInPlace(base64Data, file.type, types[step], contextParaIA);
+                const resultado = await procesarPasoBatchInPlace(base64Data, mimeType, types[step], contextParaIA);
 
                 // Guardar datos en memoria para el siguiente paso
                 if (step === 2) {
@@ -3265,7 +3271,7 @@
     function verificarIntegridadExpedienteBatch() {
         const btn = document.getElementById('btn-iniciar-batch');
         if (!btn) return;
-        const completos = Object.values(window.batchQueueFiles || {}).every(f => f !== null);
+        const completos = [1, 2, 3, 4].every(id => (window.batchQueueFiles || {})[id] !== null);
 
         if (completos) {
             btn.disabled = false;
