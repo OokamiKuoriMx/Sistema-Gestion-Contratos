@@ -1085,6 +1085,22 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             const headers = ESQUEMA_BD[tabla];
             const pkName = headers[0];
 
+            // Cuando se van a guardar registros de Matriz_Insumos
+            if (tabla === 'Matriz_Insumos') {
+                datos[tabla] = datos[tabla].map(insumo => {
+                    // Si la IA mandó una Clave_Concepto_Temp pero no el ID numérico
+                    const claveTemp = insumo.Clave_Concepto_Temp || insumo.Clave_Concepto_Padre || insumo.Clave_Padre;
+                    if (!insumo.ID_Concepto && claveTemp) {
+                        // Buscar el ID en el mapa de conceptos en caché
+                        const claveStr = String(claveTemp).trim().toUpperCase();
+                        if (mapaConceptosReales[claveStr]) {
+                            insumo.ID_Concepto = mapaConceptosReales[claveStr];
+                        }
+                    }
+                    return insumo;
+                });
+            }
+
             // --- LÓGICA DE PURGA PARA MATRICES (SUSTITUCIÓN) ---
             if (tabla === 'Matriz_Insumos' && typeof dbDelete === 'function') {
                 const listadoInsumos = datos[tabla];
@@ -1561,11 +1577,22 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                     if (match) {
                         const dataMerged = { ...match };
-                        const camposProtegidos = (tabla === 'Catalogo_Conceptos') ? ['Clave', 'Descripcion', 'Unidad'] : [];
+                        
+                        // Si estamos procesando APU/Matriz y encontramos el concepto del Programa,
+                        // DEBEMOS permitir que la APU actualice los precios y descripciones para darles precisión exacta.
+                        const esActualizacionDesdeAPU = (tabla === 'Catalogo_Conceptos' && (tipo === 'MATRIZ_INSUMOS' || tipo === 'APU'));
+                        
+                        // Protegemos la clave, pero si viene de APU, dejamos que actualice Costo, Precio y Unidad.
+                        const camposProtegidos = esActualizacionDesdeAPU 
+                            ? ['Clave'] // Solo protegemos la clave, dejamos que actualice lo financiero
+                            : ['Clave', 'Descripcion', 'Unidad']; 
 
                         Object.keys(registro).forEach(k => {
                             if (registro[k] !== undefined && registro[k] !== null && registro[k] !== '') {
-                                if (!camposProtegidos.includes(k) || !match[k]) {
+                                // Si es actualización de APU, damos prioridad a los datos entrantes (registro) sobre los existentes (match) en campos financieros
+                                if (esActualizacionDesdeAPU && ['Costo_Directo', 'Precio_Unitario', 'Importe_Total_Sin_IVA', 'Descripcion'].includes(k)) {
+                                     dataMerged[k] = registro[k];
+                                } else if (!camposProtegidos.includes(k) || !match[k]) {
                                     dataMerged[k] = registro[k];
                                 }
                             }

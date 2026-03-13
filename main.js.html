@@ -2792,7 +2792,7 @@
 
         let idConvenioExtraido = null;
         let idContratoExtraido = null;
-        let catalogoConceptosExtraido = null;
+        let catalogoDesdePrograma = null;
 
         // Deshabilitar botón y cambiar texto
         const btn = document.getElementById('btn-iniciar-batch');
@@ -2820,8 +2820,10 @@
                 let contextParaIA = {};
                 if (idContratoExtraido) contextParaIA.ID_Contrato = idContratoExtraido;
                 
-                if (step === 4 && catalogoConceptosExtraido) {
-                    contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
+                // LA CLAVE ESTÁ AQUÍ: Inyectar el catálogo al procesar las APU (Paso 4)
+                if (step === 4 && catalogoDesdePrograma) {
+                    contextParaIA.Catalogo_Contextual = catalogoDesdePrograma;
+                    contextParaIA.Instruccion_Especial = "Usa estrictamente las Claves de este Catalogo_Contextual. No inventes claves nuevas. Solo asocia los insumos a estas claves y actualiza los Costos Directos.";
                 }
 
                 // Procesar silenciosamente y capturar resultados
@@ -2836,7 +2838,7 @@
                     idContratoExtraido = resultado?.ids?.Contratos || null;
                 } else if (step === 3) {
                     // El catálogo de conceptos para el matching de APU
-                    catalogoConceptosExtraido = resultado?.datos?.Catalogo_Conceptos || null;
+                    catalogoDesdePrograma = resultado?.datos?.Catalogo_Conceptos || null;
                 } else if (step === 5) {
                     const validacionFianza = resultado?.fullResponse?.validacion;
                     if (validacionFianza) {
