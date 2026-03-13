@@ -3153,11 +3153,12 @@
         
         // Motor de evaluación por matriz de pesos para el Frontend (Nombres de Archivo)
         const huellas = {
-            1: ['contrato', 'convenio_principal', 'relacionados_con_obra'], // 1: Contrato
-            2: ['caf', 'suficiencia', 'recurso', 'fonadin', 'apoyo_financiero'], // 2: CAF
-            3: ['programa', 'calendario', 'trabajo', 'erogaciones'], // 3: Programa
-            4: ['matriz', 'apu', 'unitario', 'insumo', 'e5', 'e7', 'anexo', 'catalogo', 'explosión', 'explosion'], // 4: Matrices/APU
-            5: ['fianza', 'garant', 'poliza', 'afianzadora'] // 5: Fianza
+            // Añadimos fragmentos de folios comunes (z-cf, lo-09) a la huella del contrato
+            1: ['contrato', 'convenio_principal', 'relacionados_con_obra', 'z-cf', 'lo-09'], 
+            2: ['caf', 'suficiencia', 'recurso', 'fonadin', 'apoyo_financiero'], 
+            3: ['programa', 'calendario', 'trabajo', 'erogaciones'], 
+            4: ['matriz', 'apu', 'unitario', 'insumo', 'e5', 'e7', 'anexo', 'catalogo', 'explosión', 'explosion'], 
+            5: ['fianza', 'garant', 'poliza', 'afianzadora'] 
         };
 
         let target = 0;
@@ -3175,14 +3176,18 @@
             }
         }
 
-        // Si no hay coincidencias, buscar el primer slot vacío, si no, el sugerido
+        // NUEVA REGLA: Si el nombre no tiene palabras clave pero tiene formato de folio institucional alfanumérico largo, asumimos que es el contrato
+        if (target === 0 && /[0-9]+-[a-z]+-[a-z]+/i.test(name)) {
+            target = 1;
+        }
+
+        // Si sigue sin coincidencias, buscar el primer slot vacío
         if (target === 0) {
             target = [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]) || suggestedSlot;
         } else {
-            // Si el target está ocupado, buscar otro disponible o sobrescribir el slot actual o dejarlo libre
             if (window.batchQueueFiles[target]) {
                 const availableSlot = [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]);
-                if (availableSlot) target = availableSlot; // fallback a cualquiera disponible para no chocar
+                if (availableSlot) target = availableSlot; 
             }
         }
 

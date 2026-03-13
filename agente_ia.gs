@@ -9,43 +9,36 @@ if (!GEMINI_API_KEY) {
 }
 
 const PROMPT_CLASIFICADOR_DOCUMENTOS = `
-Rol: Eres un clasificador experto de documentos técnicos de construcción y administración pública.
+Rol: Eres un clasificador experto de documentos técnicos de construcción y administración pública en México.
 Objetivo: Identificar el tipo de documento proporcionado aplicando la "Regla de Oro".
-
 CONTEXTO ADICIONAL:
 - Filename: {{FILENAME}}
 
-REGLA DE ORO (Criterios de Clasificación - PENSAMIENTO VISUAL):
-
-**Paso 1: ¿Es una Cuadrícula/Tabla o es Prosa?**
-- Si ves una estructura dominante de **COLUMNAS, FILAS y CELDAS** con números, descripciones técnicas y precios unitarios -> ES UN **APU / MATRIZ**.
-- Si ves un documento escrito en **PÁRRAFOS de texto legal** articulado en cláusulas -> ES UN **CONTRATO**.
-
-**Reglas Específicas:**
+**REGLA DE ORO (CRÍTICO: CAF vs CONTRATO):**
+Tanto el CAF como el CONTRATO principal son documentos legales extensos que contienen "DECLARACIONES" y "CLÁUSULAS". Para distinguirlos, DEBES leer el TÍTULO y las PARTES INVOLUCRADAS:
 
 1. **CAF (Convenio de Apoyo Financiero / Suficiencia)**: 
-   - Estructura: Oficio informativo (1-3 págs).
-   - Claves: "Oficio de Suficiencia", "BANOBRAS", "Recursos Federales".
-   - Identificador: No es una tabla densa de insumos.
+   - Título: Contiene "CONVENIO DE APOYO FINANCIERO" o "SUFICIENCIA".
+   - Partes Involucradas: Participa "BANOBRAS", "FONADIN", el "FIDUCIARIO" o la "UNIDAD DE BANCA DE INVERSIÓN".
+   - Identificador: Es el documento que autoriza el fondeo de la obra.
 
-2. **APU / MATRIZ / CATÁLOGO (Análisis de Precios Unitarios)**: 
-   - **MÁXIMA PRIORIDAD**: Si el documento contiene desgloses de "Materiales", "Mano de Obra" o "Equipo", o si es una tabla de conceptos con Clave, Unidad, Cantidad y P.U.
-   - **FILTRO DE ARCHIVO**: Archivos con nombres como "FORMA E5", "E7", "Anexo Técnico", "Catálogo" son casi siempre APUs/Catálogos.
-   - **REGLA VISUAL**: Tiene muchas celdas. Se ve como una hoja de cálculo impresa.
+2. **Contratos (Contrato Principal de Obra Pública)**: 
+   - Título: Contiene "CONTRATO DE SERVICIOS RELACIONADOS CON OBRA PÚBLICA" o similar.
+   - Partes Involucradas: Se celebra entre "LA DEPENDENCIA" (ej. Secretaría de Infraestructura) y "EL CONTRATISTA" (una empresa privada o participación conjunta).
+   - Identificador: Es el documento operativo directo con la empresa constructora.
 
-3. **CONTRATO (Documento Legal)**: 
-   - **IDENTIFICADOR EXCLUSIVO**: Debe contener una narrativa legal con "DECLARACIONES" y "CLÁUSULAS" (Ej: PRIMERA, SEGUNDA...).
-   - **REGLA NEGATIVA**: Un contrato legal NUNCA es un listado detallado de insumos fila por fila. Si el documento se parece a un Excel, NO es un contrato.
+3. **Matriz_Insumos (APU / Catálogo)**: 
+   - Visual: Tiene estructura dominante de COLUMNAS, FILAS y CELDAS. Desglosa materiales, mano de obra, equipo. Se ve como una hoja de cálculo impresa.
 
-4. **PROGRAMA (Programa de Obra)**: 
-   - Estructura: Tabla con una línea de tiempo (Meses, Semanas) y barras o montos en las celdas para indicar ejecución.
+4. **Programa (Programa de Obra)**: 
+   - Visual: Tabla con una línea de tiempo (meses, semanas) y montos/porcentajes de ejecución programada.
 
-5. **FIANZA**:
-   - Estructura: Formato de afianzadora/aseguradora con logotipos institucionales y datos de la póliza.
+5. **Fianza**:
+   - Visual: Formato emitido por una AFIANZADORA, Institución de Garantías o Aseguradora. Cita pólizas y montos afianzados.
 
-INSTRUCCIÓN: Analiza visualmente el documento y responde ÚNICAMENTE con un JSON.
+INSTRUCCIÓN: Analiza visual y textualmente el documento y responde ÚNICAMENTE con un JSON válido.
 Clases permitidas: 'Contratos', 'CAF', 'Programa', 'Matriz_Insumos', 'Fianza'.
-Ejemplo: {"clase": "Matriz_Insumos", "razon_visual": "Contiene tablas densas de materiales y precios unitarios"}
+Ejemplo: {"clase": "CAF", "razon_visual": "El título indica Convenio de Apoyo Financiero y participa Banobras"}
 `;
 
 /**
