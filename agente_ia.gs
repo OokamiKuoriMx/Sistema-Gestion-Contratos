@@ -1337,14 +1337,19 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                 // PRE-RESOLVER: Convertir Clave_Concepto_Padre → ID_Concepto ANTES de purgar
                 if (idContratoParaResolve) {
                     listadoInsumos.forEach(ins => {
-                        if (!ins.ID_Concepto && (ins.Clave_Concepto_Padre || ins.Clave_Padre)) {
-                            const clave = ins.Clave_Concepto_Padre || ins.Clave_Padre;
-                            const con = dbSelect('Catalogo_Conceptos', { Clave: clave, ID_Contrato: idContratoParaResolve });
-                            if (con && con.length > 0) ins.ID_Concepto = con[0].ID_Concepto;
-                        }
-                        // Fallback: último concepto insertado en esta sesión
-                        if (!ins.ID_Concepto && ultimosIdsInsertados['Catalogo_Conceptos']) {
-                            ins.ID_Concepto = ultimosIdsInsertados['Catalogo_Conceptos'];
+                        if (!ins.ID_Concepto && (ins.Clave_Concepto_Padre || ins.Clave_Padre || ins.Clave_Concepto_Temp)) {
+                            const claveTemp = ins.Clave_Concepto_Padre || ins.Clave_Padre || ins.Clave_Concepto_Temp;
+                            const claveNorm = String(claveTemp).replace(/\s+/g, '').toUpperCase();
+                            
+                            // 1. Buscar en el mapa rápido primero (Memoria de esta sesión)
+                            if (mapaConceptosReales[claveNorm]) {
+                                ins.ID_Concepto = mapaConceptosReales[claveNorm];
+                            } else {
+                                // 2. Búsqueda profunda en DB si no estaba en la sesión
+                                const catDB = dbSelect('Catalogo_Conceptos', { ID_Contrato: idContratoParaResolve });
+                                const matchCat = catDB.find(c => String(c.Clave).replace(/\s+/g, '').toUpperCase() === claveNorm);
+                                if (matchCat) ins.ID_Concepto = matchCat.ID_Concepto;
+                            }
                         }
                     });
                 }
@@ -1901,7 +1906,8 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                             // Actualizar mapa de sesión para resolución instantánea de hijos (APUs/Programa)
                             if (tabla === 'Catalogo_Conceptos' && registro.Clave) {
-                                mapaConceptosReales[registro.Clave.toString().toUpperCase()] = newId;
+                                // CORRECCIÓN: Se agrega .replace(/\s+/g, '') para homologar las claves sin espacios
+                                mapaConceptosReales[registro.Clave.toString().replace(/\s+/g, '').toUpperCase()] = newId;
                             }
 
                             // Sincronizar contexto global si es un contrato
