@@ -48,26 +48,26 @@ Ejemplo: {"clase": "CAF", "razon_visual": "El título indica Convenio de Apoyo F
 function extraerTextoRapidoPDF(base64Content, mimeType) {
     try {
         if (!mimeType || (!mimeType.includes('pdf') && !mimeType.includes('image'))) return "";
-        
+
         let cleanBase64 = base64Content;
         if (base64Content.includes('base64,')) {
             cleanBase64 = base64Content.split('base64,')[1];
         }
-        
+
         const blob = Utilities.newBlob(Utilities.base64Decode(cleanBase64), mimeType, "temp_ocr_doc");
-        
+
         const resource = {
             name: blob.getName(),
             mimeType: mimeType
         };
-        
+
         // Requiere habilitar la API Advanced de Drive (v3) en Apps Script (como en tu captura)
         const file = Drive.Files.create(resource, blob, { ocr: true, ocrLanguage: "es" });
         const doc = DocumentApp.openById(file.id);
         const text = doc.getBody().getText();
-        
+
         DriveApp.getFileById(file.id).setTrashed(true);
-        
+
         // Retornar solo el inicio del documento (aprox 3-4 cuartillas para no saturar tokens ni memoria)
         return text.substring(0, 6000);
     } catch (e) {
@@ -112,12 +112,11 @@ function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pd
             };
 
             const options = {
-                method: 'post',
-                contentType: 'application/json',
+                method: "post",
+                contentType: "application/json",
                 payload: JSON.stringify(payload),
-                muteHttpExceptions: true // Para capturar el 404
+                muteHttpExceptions: true
             };
-
             const response = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=` + GEMINI_API_KEY, options);
             const respCode = response.getResponseCode();
             const respText = response.getContentText();
@@ -148,94 +147,94 @@ function clasificarDocumentoIA(base64Content, mimeType, filename = "documento.pd
  * Escanea el texto y determina el tipo de documento legal/administrativo.
  */
 function clasificarDocumentoRobusto(textoPDF) {
-  if (!textoPDF) return { tipoDocumento: 'DESCONOCIDO', confianzaPorcentaje: 0, numeroContratoIdentificado: null, esValido: false };
-  // Normalización estricta: todo a mayúsculas y espacios uniformes
-  const textoNormalizado = String(textoPDF).toUpperCase().replace(/\s+/g, ' ');
+    if (!textoPDF) return { tipoDocumento: 'DESCONOCIDO', confianzaPorcentaje: 0, numeroContratoIdentificado: null, esValido: false };
+    // Normalización estricta: todo a mayúsculas y espacios uniformes
+    const textoNormalizado = String(textoPDF).toUpperCase().replace(/\s+/g, ' ');
 
-  // 1. Matriz de huellas dactilares (Palabras clave únicas por documento)
-  const huellas = {
-    'CAF': [
-      "CONVENIO DE APOYO FINANCIERO",
-      "FONADIN",
-      "BANOBRAS",
-      "UNIDAD DE BANCA DE INVERSIÓN",
-      "DELEGADO FIDUCIARIO"
-    ],
-    'Contratos': [
-      "CONTRATO DE SERVICIOS RELACIONADOS CON OBRA PÚBLICA",
-      "DIRECCIÓN GENERAL DE DESARROLLO CARRETERO",
-      "PLURIANUAL CON CARÁCTER NACIONAL",
-      "EL CONTRATISTA",
-      "LA DEPENDENCIA"
-    ],
-    'Matriz_Insumos': [
-      "ANALISIS DE PRECIOS UNITARIOS",
-      "P. UNITARIO",
-      "CARGOS ADICIONALES",
-      "MANO DE OBRA GRAVABLE",
-      "FORMA E5",
-      "INSUMOS QUE INTERVIENEN EN LA INTEGRACIÓN"
-    ],
-    'Fianza': [
-      "POLIZA DE FIANZA",
-      "COMISION NACIONAL DE SEGUROS Y FIANZAS",
-      "INSTITUCIÓN DE GARANTÍAS",
-      "FIADORA",
-      "MONTO TOTAL DE LA FIANZA"
-    ],
-    'Programa': [
-      "PROGRAMA DE TRABAJO",
-      "DIAS NATURALES",
-      "ESTIMACIÓN 1",
-      "FECHA DE CONTRATO",
-      "PLAZO:"
-    ]
-  };
+    // 1. Matriz de huellas dactilares (Palabras clave únicas por documento)
+    const huellas = {
+        'CAF': [
+            "CONVENIO DE APOYO FINANCIERO",
+            "FONADIN",
+            "BANOBRAS",
+            "UNIDAD DE BANCA DE INVERSIÓN",
+            "DELEGADO FIDUCIARIO"
+        ],
+        'Contratos': [
+            "CONTRATO DE SERVICIOS RELACIONADOS CON OBRA PÚBLICA",
+            "DIRECCIÓN GENERAL DE DESARROLLO CARRETERO",
+            "PLURIANUAL CON CARÁCTER NACIONAL",
+            "EL CONTRATISTA",
+            "LA DEPENDENCIA"
+        ],
+        'Matriz_Insumos': [
+            "ANALISIS DE PRECIOS UNITARIOS",
+            "P. UNITARIO",
+            "CARGOS ADICIONALES",
+            "MANO DE OBRA GRAVABLE",
+            "FORMA E5",
+            "INSUMOS QUE INTERVIENEN EN LA INTEGRACIÓN"
+        ],
+        'Fianza': [
+            "POLIZA DE FIANZA",
+            "COMISION NACIONAL DE SEGUROS Y FIANZAS",
+            "INSTITUCIÓN DE GARANTÍAS",
+            "FIADORA",
+            "MONTO TOTAL DE LA FIANZA"
+        ],
+        'Programa': [
+            "PROGRAMA DE TRABAJO",
+            "DIAS NATURALES",
+            "ESTIMACIÓN 1",
+            "FECHA DE CONTRATO",
+            "PLAZO:"
+        ]
+    };
 
-  // 2. Variables para rastrear al ganador
-  let mejorCategoria = 'DESCONOCIDO';
-  let puntajeMaximo = 0;
-  let confianzaGanadora = 0;
+    // 2. Variables para rastrear al ganador
+    let mejorCategoria = 'DESCONOCIDO';
+    let puntajeMaximo = 0;
+    let confianzaGanadora = 0;
 
-  // 3. Motor de evaluación
-  for (const [categoria, palabrasClave] of Object.entries(huellas)) {
-    let puntosObtenidos = 0;
-    
-    // Contar cuántas palabras clave se encontraron en el texto
-    palabrasClave.forEach(patron => {
-      if (textoNormalizado.includes(patron)) {
-        puntosObtenidos++;
-      }
-    });
+    // 3. Motor de evaluación
+    for (const [categoria, palabrasClave] of Object.entries(huellas)) {
+        let puntosObtenidos = 0;
 
-    // Actualizar el ganador si esta categoría tiene más puntos
-    if (puntosObtenidos > puntajeMaximo) {
-      puntajeMaximo = puntosObtenidos;
-      mejorCategoria = categoria;
-      confianzaGanadora = (puntosObtenidos / palabrasClave.length) * 100;
+        // Contar cuántas palabras clave se encontraron en el texto
+        palabrasClave.forEach(patron => {
+            if (textoNormalizado.includes(patron)) {
+                puntosObtenidos++;
+            }
+        });
+
+        // Actualizar el ganador si esta categoría tiene más puntos
+        if (puntosObtenidos > puntajeMaximo) {
+            puntajeMaximo = puntosObtenidos;
+            mejorCategoria = categoria;
+            confianzaGanadora = (puntosObtenidos / palabrasClave.length) * 100;
+        }
     }
-  }
 
-  // 4. Umbral de seguridad (Mínimo 2 coincidencias para evitar falsos positivos)
-  if (puntajeMaximo < 2) {
-    mejorCategoria = 'DESCONOCIDO';
-    confianzaGanadora = 0;
-  }
+    // 4. Umbral de seguridad (Mínimo 2 coincidencias para evitar falsos positivos)
+    if (puntajeMaximo < 2) {
+        mejorCategoria = 'DESCONOCIDO';
+        confianzaGanadora = 0;
+    }
 
-  // 5. Extracción temprana de metadatos transversales (si aplican)
-  let numContrato = null;
-  const matchContrato = textoNormalizado.match(/(?:CONTRATO N[UÚ]MERO|CONTRATO:?)\s*([A-Z0-9\-]+)/);
-  if (matchContrato) {
-    numContrato = matchContrato[1].trim();
-  }
+    // 5. Extracción temprana de metadatos transversales (si aplican)
+    let numContrato = null;
+    const matchContrato = textoNormalizado.match(/(?:CONTRATO N[UÚ]MERO|CONTRATO:?)\s*([A-Z0-9\-]+)/);
+    if (matchContrato) {
+        numContrato = matchContrato[1].trim();
+    }
 
-  // 6. Retorno de la decisión
-  return {
-    tipoDocumento: mejorCategoria,
-    confianzaPorcentaje: typeof confianzaGanadora === 'number' ? confianzaGanadora.toFixed(2) : "0.00",
-    numeroContratoIdentificado: numContrato,
-    esValido: mejorCategoria !== 'DESCONOCIDO'
-  };
+    // 6. Retorno de la decisión
+    return {
+        tipoDocumento: mejorCategoria,
+        confianzaPorcentaje: typeof confianzaGanadora === 'number' ? confianzaGanadora.toFixed(2) : "0.00",
+        numeroContratoIdentificado: numContrato,
+        esValido: mejorCategoria !== 'DESCONOCIDO'
+    };
 }
 
 /**
@@ -243,35 +242,35 @@ function clasificarDocumentoRobusto(textoPDF) {
  * Despacha la extracción a funciones especializadas o, en su defecto, pide ayuda al agente de IA.
  */
 function procesarDocumentoEntrante(textoExtraido, base64Data = null, mimeType = null, contextJson = null) {
-  const clasificacion = clasificarDocumentoRobusto(textoExtraido);
-  console.log("Documento clasificado por matriz de pesos como: " + clasificacion.tipoDocumento + " con " + clasificacion.confianzaPorcentaje + "% de confianza.");
+    const clasificacion = clasificarDocumentoRobusto(textoExtraido);
+    console.log("Documento clasificado por matriz de pesos como: " + clasificacion.tipoDocumento + " con " + clasificacion.confianzaPorcentaje + "% de confianza.");
 
-  let extContext = contextJson;
-  if (typeof extContext === 'string') {
-      try { extContext = JSON.parse(extContext); } catch (e) { extContext = {}; }
-  } else if (!extContext) {
-      extContext = {};
-  }
+    let extContext = contextJson;
+    if (typeof extContext === 'string') {
+        try { extContext = JSON.parse(extContext); } catch (e) { extContext = {}; }
+    } else if (!extContext) {
+        extContext = {};
+    }
 
-  if (clasificacion.numeroContratoIdentificado) {
-      extContext.Numero_Contrato_Identificado = clasificacion.numeroContratoIdentificado;
-  }
+    if (clasificacion.numeroContratoIdentificado) {
+        extContext.Numero_Contrato_Identificado = clasificacion.numeroContratoIdentificado;
+    }
 
-  const strContext = Object.keys(extContext).length > 0 ? JSON.stringify(extContext) : null;
+    const strContext = Object.keys(extContext).length > 0 ? JSON.stringify(extContext) : null;
 
-  switch (clasificacion.tipoDocumento) {
-    case 'CAF':
-    case 'Contratos':
-    case 'Matriz_Insumos':
-    case 'Fianza':
-    case 'Programa':
-      // Usar nuestro motor IA actual pre-enrutado a la tabla correcta
-      return procesarDocumentoConIA(base64Data, mimeType, clasificacion.tipoDocumento, strContext);
-      
-    default:
-      // Derivar al agente_ia.gs al flujo libre inferido
-      return procesarDocumentoConIA(base64Data, mimeType, null, "Intenta determinar qué tipo de documento es y extrae sus datos principales. " + (strContext || ""));
-  }
+    switch (clasificacion.tipoDocumento) {
+        case 'CAF':
+        case 'Contratos':
+        case 'Matriz_Insumos':
+        case 'Fianza':
+        case 'Programa':
+            // Usar nuestro motor IA actual pre-enrutado a la tabla correcta
+            return procesarDocumentoConIA(base64Data, mimeType, clasificacion.tipoDocumento, strContext);
+
+        default:
+            // Derivar al agente_ia.gs al flujo libre inferido
+            return procesarDocumentoConIA(base64Data, mimeType, null, "Intenta determinar qué tipo de documento es y extrae sus datos principales. " + (strContext || ""));
+    }
 }
 
 /**
@@ -703,9 +702,7 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             method: "post",
             contentType: "application/json",
             payload: JSON.stringify(payload),
-            muteHttpExceptions: true,
-            validateHttpsCertificates: true,
-            followRedirects: true
+            muteHttpExceptions: true
         };
 
         let llmString = null;
@@ -714,9 +711,29 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
         for (const modelId of modelsToTry) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`;
-                // @ts-ignore
-                UrlFetchApp.setRequestTimeout(60000);
-                const response = UrlFetchApp.fetch(url, options);
+                
+                // === NUEVO SISTEMA ANTI-TIMEOUT (REINTENTOS) ===
+                let response;
+                let maxRetries = 2; // Intentará hasta 3 veces por modelo
+                let attempt = 0;
+                let successFetch = false;
+
+                while (attempt <= maxRetries && !successFetch) {
+                    try {
+                        response = UrlFetchApp.fetch(url, options);
+                        successFetch = true; // Si pasa de esta línea, no hubo timeout de red
+                    } catch (fetchError) {
+                        attempt++;
+                        if (attempt > maxRetries) {
+                            throw new Error("Timeout de red al conectar con Gemini después de " + attempt + " intentos.");
+                        }
+                        // Esperar 2 segundos antes de reintentar (Retroceso)
+                        Utilities.sleep(2000 * attempt); 
+                        console.warn("Reintentando conexión con modelo " + modelId + "... (Intento " + attempt + ")");
+                    }
+                }
+                // ===============================================
+
                 const resultJson = JSON.parse(response.getContentText());
 
                 if (response.getResponseCode() !== 200) {
@@ -1760,21 +1777,21 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
                     if (match) {
                         const dataMerged = { ...match };
-                        
+
                         // Si estamos procesando APU/Matriz y encontramos el concepto del Programa,
                         // DEBEMOS permitir que la APU actualice los precios y descripciones para darles precisión exacta.
                         const esActualizacionDesdeAPU = (tabla === 'Catalogo_Conceptos' && (tipo === 'MATRIZ_INSUMOS' || tipo === 'APU'));
-                        
+
                         // Protegemos la clave, pero si viene de APU, dejamos que actualice Costo, Precio y Unidad.
-                        const camposProtegidos = esActualizacionDesdeAPU 
+                        const camposProtegidos = esActualizacionDesdeAPU
                             ? ['Clave'] // Solo protegemos la clave, dejamos que actualice lo financiero
-                            : ['Clave', 'Descripcion', 'Unidad']; 
+                            : ['Clave', 'Descripcion', 'Unidad'];
 
                         Object.keys(registro).forEach(k => {
                             if (registro[k] !== undefined && registro[k] !== null && registro[k] !== '') {
                                 // Si es actualización de APU, damos prioridad a los datos entrantes (registro) sobre los existentes (match) en campos financieros
                                 if (esActualizacionDesdeAPU && ['Costo_Directo', 'Precio_Unitario', 'Importe_Total_Sin_IVA', 'Descripcion'].includes(k)) {
-                                     dataMerged[k] = registro[k];
+                                    dataMerged[k] = registro[k];
                                 } else if (!camposProtegidos.includes(k) || !match[k]) {
                                     dataMerged[k] = registro[k];
                                 }
@@ -2096,8 +2113,8 @@ function analizarCambiosIA(datos) {
 
                     // CORRECCIÓN: Permitir que la UI muestre los cambios financieros si vienen de la APU
                     const esActualizacionDesdeAPU = (tabla === 'Catalogo_Conceptos' && (tipo === 'MATRIZ_INSUMOS' || tipo === 'APU'));
-                    const camposProtegidos = esActualizacionDesdeAPU 
-                        ? ['Clave'] 
+                    const camposProtegidos = esActualizacionDesdeAPU
+                        ? ['Clave']
                         : (tabla === 'Catalogo_Conceptos' ? ['Clave', 'Descripcion', 'Unidad'] : []);
 
                     headers.forEach(h => {
