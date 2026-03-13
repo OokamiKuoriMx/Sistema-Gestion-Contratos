@@ -477,7 +477,7 @@ function processDocumentWithAI(base64Data, mimeType, targetTable = null, context
                             const idProg = prog[0].ID_Numero_Programa;
                             const pers = dbSelect('Programa_Periodo', { ID_Numero_Programa: idProg });
                             if (pers && pers.length > 0) {
-                                promptAdicional += `\n\nPERIODOS EXISTENTES (USA EXACTAMENTE ESTOS NOMBRES): ${JSON.stringify(pers.map(p => ({ Nombre: p.Periodo, Inicio: p.Fecha_Inicio, Fin: p.Fecha_Termino || p.Fecha_Fin })))}`;
+                                promptAdicional += `\n\nPERIODOS EXISTENTES (USA EXACTAMENTE ESTOS NOMBRES, ID Y NUMERO): ${JSON.stringify(pers.map(p => ({ ID_Programa_Periodo: p.ID_Programa_Periodo, Numero_Periodo: p.Numero_Periodo, Nombre: p.Periodo, Inicio: p.Fecha_Inicio, Fin: p.Fecha_Termino || p.Fecha_Fin })))}`;
                             }
                         }
                         const cat = dbSelect('Catalogo_Conceptos', { ID_Contrato: idCont });
@@ -737,11 +737,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             const conceptosUnicos = {};
 
             datos.Periodos_Programados.forEach((per, idx) => {
-                const nombrePer = String(per.Nombre_Periodo || "").trim().toUpperCase();
+                const nombrePer = String(per.Nombre_Periodo || "").replace(/^'+/, '').trim().toUpperCase();
 
                 // 1. Guardar Periodo
                 const perObj = {
-                    Numero_Periodo: idx + 1,
+                    Numero_Periodo: parseInt(per.Numero_Periodo) || (idx + 1),
                     Periodo: nombrePer,
                     Fecha_Inicio: per.Fecha_Inicio,
                     Fecha_Termino: per.Fecha_Termino || per.Fecha_Fin
@@ -922,7 +922,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
             const contDb = dbSelect('Contratos', { Numero_Contrato: needleText });
             if (contDb && contDb.length > 0) {
                 globalIdContrato = contDb[0].ID_Contrato;
-            } else {
+            } else if (tipo === 'CONTRATO') {
                 // Auto-create minimal contract to hold the relationship
                 const newCont = dbInsert('Contratos', { Numero_Contrato: needleText, Objeto_Contrato: "Importado automáticamente por IA" });
                 if (newCont && newCont.ID_Contrato) {
@@ -978,6 +978,14 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
 
             datos[tabla].forEach(registro => {
                 try {
+                    // Evitar inserciones vacías (causan filas en blanco en tablas clave)
+                    const tieneDatosReales = Object.keys(registro || {}).some(k => {
+                        if (k.startsWith('ID_')) return false;
+                        const v = registro[k];
+                        return v !== '' && v !== null && v !== undefined;
+                    });
+                    if (!tieneDatosReales) return;
+
                     // --- SANITIZACIÓN DE CAMPOS (MAPPING FALLBACK) ---
                     if (tabla === 'Catalogo_Conceptos') {
                         if (registro.Clave_Concepto && !registro.Clave) registro.Clave = registro.Clave_Concepto;
@@ -1131,6 +1139,11 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                         delete registro.ID_Numero_Programa;
                     }
 
+                    // Asegurar vínculo Contrato -> Contratista cuando ambos se procesan en la misma corrida
+                    if (tabla === 'Contratos' && !registro.ID_Contratista && ultimosIdsInsertados['Contratistas']) {
+                        registro.ID_Contratista = ultimosIdsInsertados['Contratistas'];
+                    }
+
                     // INYECCIÓN FORZOSA DE LLAVES FORÁNEAS (Basado en RELACIONES_BD)
                     const relacion = typeof RELACIONES_BD !== 'undefined' ? RELACIONES_BD[tabla] : null;
 
@@ -1224,10 +1237,21 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                             if (registro.Tipo_Programa) condProg.Tipo_Programa = registro.Tipo_Programa;
                             const resProg = dbSelect('Programa', condProg);
                             if (resProg && resProg.length > 0) match = resProg[0];
-                        } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa && registro.Periodo) {
-                            // MATCH POR NOMBRE DE PERIODO (Natural Key)
-                            const resPer = dbSelect('Programa_Periodo', { ID_Numero_Programa: registro.ID_Numero_Programa, Periodo: registro.Periodo });
-                            if (resPer && resPer.length > 0) match = resPer[0];
+                        } else if (tabla === 'Programa_Periodo' && registro.ID_Numero_Programa) {
+                            // MATCH PRIMARIO POR (ID_Numero_Programa + Numero_Periodo)
+                            if (registro.Numero_Periodo) {
+                                const resPerNum = dbSelect('Programa_Periodo', {
+                                    ID_Numero_Programa: registro.ID_Numero_Programa,
+                                    Numero_Periodo: registro.Numero_Periodo
+                                });
+                                if (resPerNum && resPerNum.length > 0) match = resPerNum[0];
+                            }
+                            // Fallback por nombre de periodo normalizado
+                            if (!match && registro.Periodo) {
+                                const periodos = dbSelect('Programa_Periodo', { ID_Numero_Programa: registro.ID_Numero_Programa });
+                                const perNorm = String(registro.Periodo).replace(/^'+/, '').trim().toUpperCase();
+                                match = (periodos || []).find(p => String(p.Periodo || '').replace(/^'+/, '').trim().toUpperCase() === perNorm) || null;
+                            }
                         } else if (tabla === 'Matriz_Insumos' && registro.ID_Concepto && registro.Clave_Insumo) {
                             const resMat = dbSelect('Matriz_Insumos', { ID_Concepto: registro.ID_Concepto, Clave_Insumo: registro.Clave_Insumo });
                             if (resMat && resMat.length > 0) match = resMat[0];

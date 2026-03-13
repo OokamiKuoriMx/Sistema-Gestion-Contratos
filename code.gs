@@ -2092,22 +2092,59 @@ function guardarConfiguracionPrograma(idContrato, config) {
             'Fecha_Termino': config.programa.fechaTermino
         }, { 'ID_Numero_Programa': idProg });
 
-        // 2. Actualizar Nivel 2 (Periodos)
-        // Por simplicidad en la sincronización, borramos los periodos que no tengan datos en Nivel 3 y reinsertamos.
-        // Pero el requerimiento suele ser sobreescribir.
+        // 2. Actualizar Nivel 2 (Periodos) haciendo UPSERT por (ID_Numero_Programa + Numero_Periodo)
+        const periodosExistentes = dbSelect('Programa_Periodo', { 'ID_Numero_Programa': idProg }) || [];
+        const mapaExistentes = {};
+        periodosExistentes.forEach(p => {
+            const n = parseInt(p.Numero_Periodo) || 0;
+            if (n > 0) mapaExistentes[n] = p;
+        });
 
-        // Borrar periodos actuales del programa (cascada controlada)
-        dbDelete('Programa_Periodo', { 'ID_Numero_Programa': idProg });
+        const numerosEntrantes = new Set();
+        const normalizarPeriodo = (label) => String(label || '').replace(/^'+/, '').trim().toUpperCase();
 
-        // Insertar nuevos periodos
-        config.periodos.forEach((p, index) => {
-            dbInsert('Programa_Periodo', {
+        (config.periodos || []).forEach((p, index) => {
+            const numeroPeriodo = parseInt(p.Numero_Periodo) || (index + 1);
+            numerosEntrantes.add(numeroPeriodo);
+
+            const payloadPeriodo = {
                 'ID_Numero_Programa': idProg,
-                'Numero_Periodo': index + 1,
-                'Periodo': "'" + p.label, // Forzar texto
-                'Fecha_Inicio': p.fechaInicio,
-                'Fecha_Termino': p.fechaTermino
-            });
+                'Numero_Periodo': numeroPeriodo,
+                'Periodo': normalizarPeriodo(p.label || p.Periodo),
+                'Fecha_Inicio': p.fechaInicio || p.Fecha_Inicio || '',
+                'Fecha_Termino': p.fechaTermino || p.Fecha_Termino || p.Fecha_Fin || ''
+            };
+
+            const existente = mapaExistentes[numeroPeriodo];
+            if (existente && existente.ID_Programa_Periodo) {
+                dbUpdate('Programa_Periodo', payloadPeriodo, { 'ID_Programa_Periodo': existente.ID_Programa_Periodo });
+            } else {
+                dbInsert('Programa_Periodo', payloadPeriodo);
+            }
+        });
+
+        // 3. Eliminar periodos sobrantes SOLO si no tienen dependencias en Programa_Ejecucion
+        const sheetEjec = ss.getSheetByName('Programa_Ejecucion');
+        let periodosConDependencia = new Set();
+        if (sheetEjec) {
+            const dataEjec = getSafeData(sheetEjec);
+            if (dataEjec.length > 1) {
+                const cabEjec = dataEjec[0];
+                const idxIdProgPer = getColIndex(cabEjec, 'ID_Programa_Periodo');
+                for (let i = 1; i < dataEjec.length; i++) {
+                    const idPer = dataEjec[i][idxIdProgPer];
+                    if (idPer !== '' && idPer !== null && idPer !== undefined) {
+                        periodosConDependencia.add(String(idPer));
+                    }
+                }
+            }
+        }
+
+        periodosExistentes.forEach(p => {
+            const n = parseInt(p.Numero_Periodo) || 0;
+            if (!numerosEntrantes.has(n) && p.ID_Programa_Periodo && !periodosConDependencia.has(String(p.ID_Programa_Periodo))) {
+                dbDelete('Programa_Periodo', { 'ID_Programa_Periodo': p.ID_Programa_Periodo });
+            }
         });
 
         return generarRespuesta(true, "Configuración de programa guardada exitosamente.");
@@ -2390,4 +2427,3 @@ function registrarLogActividad(idContrato, detalles) {
 function registrarLogActivity(idContrato, detalles) {
     registrarLogActividad(idContrato, detalles);
 }
-
