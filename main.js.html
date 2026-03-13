@@ -2547,15 +2547,15 @@
                     } else {
                         updateAIStatus(true, "Error en Agente IA", resIA?.error || "La IA no pudo procesar el archivo");
                         setTimeout(() => updateAIStatus(false), 3000);
-                        manejarError(resIA || { success: false, error: "Error en el procesamiento IA", functionName: "processDocumentWithAI" });
+                        manejarError(resIA || { success: false, error: "Error en el procesamiento IA", functionName: "procesarDocumentoConIA" });
                     }
                 })
                 .withFailureHandler(function (err) {
                     updateAIStatus(true, "Error de conexión", err.message);
                     setTimeout(() => updateAIStatus(false), 3000);
-                    manejarError({ error: err.message, functionName: 'processDocumentWithAI' });
+                    manejarError({ error: err.message, functionName: 'procesarDocumentoConIA' });
                 })
-                .processDocumentWithAI(base64Data, mimeType, targetTable, parentContext);
+                .procesarDocumentoConIA(base64Data, mimeType, targetTable, parentContext);
         };
         reader.onerror = function () {
             updateAIStatus(true, "Error al leer archivo", "El navegador no pudo leer el archivo local");
@@ -2818,13 +2818,10 @@
 
                 // Inyectar contexto según el paso
                 let contextParaIA = {};
-                if (step === 2 && idContratoExtraido) {
-                    contextParaIA.ID_Contrato = idContratoExtraido;
-                } else if (step === 3 && idContratoExtraido) {
-                    contextParaIA.ID_Contrato = idContratoExtraido;
-                } else if (step === 4) {
-                    if (idContratoExtraido) contextParaIA.ID_Contrato = idContratoExtraido;
-                    if (catalogoConceptosExtraido) contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
+                if (idContratoExtraido) contextParaIA.ID_Contrato = idContratoExtraido;
+                
+                if (step === 4 && catalogoConceptosExtraido) {
+                    contextParaIA.Catalogo_Contextual = catalogoConceptosExtraido;
                 }
 
                 // Procesar silenciosamente y capturar resultados
@@ -2913,7 +2910,7 @@
                     }
                 })
                 .withFailureHandler(reject)
-                .processDocumentWithAI(base64, mime, table, JSON.stringify(context));
+                .procesarDocumentoConIA(base64, mime, table, JSON.stringify(context));
         });
     }
     function marcarSlotProcesando(id) {
@@ -3155,7 +3152,7 @@
         if (name.includes('contrato')) target = 1;
         else if (name.includes('caf') || name.includes('suficiencia') || name.includes('recurso')) target = 2;
         else if (name.includes('programa') || name.includes('calendario') || name.includes('trabajo')) target = 3;
-        else if (name.includes('matriz') || name.includes('apu') || name.includes('unitario') || name.includes('insumo')) target = 4;
+        else if (name.includes('matriz') || name.includes('apu') || name.includes('unitario') || name.includes('insumo') || name.includes('_e5') || name.includes('_e7') || name.includes('anexo') || name.includes('catalogo')) target = 4;
         else if (name.includes('fianza') || name.includes('garant') || name.includes('poliza')) target = 5;
         else target = [1, 2, 3, 4, 5].find(s => !window.batchQueueFiles[s]) || suggestedSlot;
 

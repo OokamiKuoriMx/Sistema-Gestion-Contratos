@@ -138,7 +138,7 @@ function fix_extrapolarEstructuraProgramaCompleto() {
                     idPer = perExistente[0];
                 } else {
                     idPer = nextPerId++;
-                    const mesNombre = Utilities.formatDate(new Date(pu.fIni), "GMT", "MMMM yyyy");
+                    const mesNombre = Utilities.formatDate(new Date(pu.fIni), "GMT", "MMMM yyyy").toUpperCase();
                     sheetPer.appendRow([
                         idPer,
                         idProgActual,
@@ -361,4 +361,64 @@ function depurarDatosHuerfanos() {
         console.error("Error en depurarDatosHuerfanos:", e);
         return generarRespuesta(false, e.toString());
     }
+}
+
+/**
+ * Fusiona registros duplicados en Convenios_Recurso basados en la normalización del Numero_Acuerdo.
+ * Busca coincidencias ignorando guiones, espacios y puntuación, manteniendo el registro más completo.
+ */
+function fix_limpiarDuplicadosConvenios() {
+    const SS = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = SS.getSheetByName('Convenios_Recurso');
+    if (!sheet) return "Hoja Convenios_Recurso no encontrada";
+
+    const data = getSafeData(sheet);
+    if (data.length <= 1) return "No hay datos para procesar";
+
+    const headers = data[0];
+    const idxNum = headers.indexOf('Numero_Acuerdo');
+    if (idxNum === -1) return "Columna Numero_Acuerdo no encontrada";
+    
+    const visitados = new Map(); // normalized -> index en el array 'data'
+    const filasABorrar = [];
+    let fusionados = 0;
+
+    for (let i = 1; i < data.length; i++) {
+        const numOriginal = data[i][idxNum];
+        if (!numOriginal) continue;
+
+        const numNorm = normalizeText(numOriginal);
+        
+        if (visitados.has(numNorm)) {
+            const indexOriginal = visitados.get(numNorm);
+            const rowBase = data[indexOriginal];
+            const rowDuplicada = data[i];
+            
+            // Fusionar datos: Si el registro base tiene un campo vacío y el duplicado no, lo llenamos.
+            headers.forEach((h, colIdx) => {
+                // No tocar IDs ni el Numero_Acuerdo (el base se queda como está)
+                if (h.startsWith('ID_') || h === 'Numero_Acuerdo') return;
+                
+                const valBase = rowBase[colIdx];
+                const valDup = rowDuplicada[colIdx];
+
+                if ((valBase === "" || valBase === null || valBase === undefined) && (valDup !== "" && valDup !== null && valDup !== undefined)) {
+                    rowBase[colIdx] = valDup;
+                    sheet.getRange(indexOriginal + 1, colIdx + 1).setValue(valDup);
+                }
+            });
+            
+            filasABorrar.push(i + 1);
+            fusionados++;
+            console.log(`[FIX] Fusionando duplicado: ${numOriginal} (Fila ${i+1}) -> Base: ${rowBase[idxNum]}`);
+        } else {
+            visitados.set(numNorm, i);
+        }
+    }
+
+    // Borrar de abajo hacia arriba para no alterar índices de fila
+    filasABorrar.reverse().forEach(row => sheet.deleteRow(row));
+    
+    console.log(`Limpieza finalizada. Registros fusionados: ${fusionados}`);
+    return `Limpieza exitosa: se fusionaron ${fusionados} registros duplicados en Convenios_Recurso.`;
 }

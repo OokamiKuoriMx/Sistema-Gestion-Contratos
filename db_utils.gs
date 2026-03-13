@@ -125,6 +125,11 @@ function dbInsert(tabla, datos) {
         const headers = data.length > 0 ? data[0] : ESQUEMA_BD[tabla];
         const pkName = headers[0];
 
+        // --- NORMALIZACIÓN DE ESTILO (MAYÚSCULAS) ---
+        if (datos.Periodo && typeof datos.Periodo === 'string') {
+            datos.Periodo = datos.Periodo.toUpperCase();
+        }
+
         // Determinar si debemos auto-generar el ID:
         // 1. Si no viene
         // 2. Si viene un string temporal ("temp_...")
@@ -163,7 +168,25 @@ function dbInsert(tabla, datos) {
             }
         }
 
-        const row = headers.map(h => datos[h] !== undefined ? datos[h] : "");
+        const row = headers.map(h => {
+            const val = datos[h];
+            return (val !== undefined && val !== null) ? val : "";
+        });
+        
+        // --- PREVENCIÓN DE LÍNEAS EN BLANCO ---
+        // Verificamos si todos los campos (excepto la PK autogenerada) están vacíos o son solo espacios
+        const hasContent = headers.some((h, idx) => {
+            if (h === pkName) return false;
+            const val = row[idx];
+            if (typeof val === 'string') return val.trim().length > 0;
+            return val !== "" && val !== null && val !== undefined;
+        });
+
+        if (!hasContent) {
+            console.warn("dbInsert: Se intentó insertar una fila vacía en " + tabla + ". Operación cancelada.");
+            return datos;
+        }
+
         sheet.appendRow(row);
         SpreadsheetApp.flush(); // Garantizar consistencia
 
@@ -185,6 +208,11 @@ function dbUpdate(tabla, datos, condiciones) {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(tabla);
         if (!sheet) return;
+
+        // --- NORMALIZACIÓN DE ESTILO (MAYÚSCULAS) ---
+        if (datos.Periodo && typeof datos.Periodo === 'string') {
+            datos.Periodo = datos.Periodo.toUpperCase();
+        }
 
         const allData = getSafeData(sheet);
         if (allData.length <= 1) return;

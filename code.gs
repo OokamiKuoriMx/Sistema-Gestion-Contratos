@@ -37,10 +37,15 @@ const ESQUEMA_BD = {
 
 /**
  * Esquema de Relaciones Jerárquicas del SGC.
- * Define la dependencia de cada tabla con su nivel inmediato superior.
  */
 const RELACIONES_BD = {
-    // Nivel 1: Hijos directos de Contrato
+    // Nivel 0: Padres de Contratos
+    'Contratos': [
+        { padre: 'Contratistas', fk: 'ID_Contratista' },
+        { padre: 'Convenios_Recurso', fk: 'ID_Convenio_Vinculado' }
+    ],
+
+    // Nivel 1: Hijos directos de Contratos
     'Catalogo_Conceptos': { padre: 'Contratos', fk: 'ID_Contrato' },
     'Programa': { padre: 'Contratos', fk: 'ID_Contrato' },
     'Estimaciones': { padre: 'Contratos', fk: 'ID_Contrato' },
