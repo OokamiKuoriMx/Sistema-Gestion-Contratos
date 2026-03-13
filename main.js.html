@@ -2891,7 +2891,8 @@
     /**
      * PROCESA UN PASO DEL BATCH SIN MODALES INTRUSIVOS
      */
-    async function procesarPasoBatchInPlace(base64, mime, table, context = {}) {
+    async function procesarPasoBatchInPlace(base64, mime, table, context = {}, retryCount = 0) {
+        const MAX_RETRIES = 1; // Un reintento automático para timeouts
         return new Promise((resolve, reject) => {
             google.script.run
                 .withSuccessHandler((response) => {
@@ -2899,7 +2900,13 @@
                     console.log("DEBUG_IA_BATCH_RESPONSE:", response);
 
                     if (response.error) {
-                        reject(new Error(response.error));
+                        // Si es un timeout y tenemos reintentos, lo lanzamos de nuevo con Flash
+                        if (response.error.includes("timed out") && retryCount < MAX_RETRIES) {
+                            console.warn("Timeout detectado, reintentando paso...");
+                            resolve(procesarPasoBatchInPlace(base64, mime, table, context, retryCount + 1));
+                        } else {
+                            reject(new Error(response.error));
+                        }
                     } else {
                         // Iniciar el guardado automático del resultado extraído
                         google.script.run
@@ -2908,10 +2915,17 @@
                                 else resolve({ datos: response.data.datos, ids: saveResponse.ids, fullResponse: response.data });
                             })
                             .withFailureHandler(reject)
-                            .guardarDatosIA(response.data, table, context.ID_Convenio_Vinculado || null);
+                            .guardarDatosIA(response.data, table, context.ID_Contrato || null);
                     }
                 })
-                .withFailureHandler(reject)
+                .withFailureHandler(async (err) => {
+                    if (retryCount < MAX_RETRIES) {
+                        console.warn("Falla de red, reintentando...");
+                        resolve(procesarPasoBatchInPlace(base64, mime, table, context, retryCount + 1));
+                    } else {
+                        reject(err);
+                    }
+                })
                 .procesarDocumentoConIA(base64, mime, table, JSON.stringify(context));
         });
     }

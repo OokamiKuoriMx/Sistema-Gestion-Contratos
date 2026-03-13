@@ -584,12 +584,12 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
         // 2. Seleccionar el Modelo y Fallbacks (Optimización de Resiliencia y Costos)
         const modelsToTry = (function () {
             // Alta Complejidad (Tablas y Razonamiento Espacial)
-            if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') return ["gemini-3.1-pro", "gemini-2.5-pro"];
+            if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') return ["gemini-2.0-pro", "gemini-1.5-pro"];
             if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') return ["gemini-3.1-pro", "gemini-2.5-pro"];
 
             // Media Complejidad (Prosa y Extracción Mixta)
-            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') return ["gemini-3.0-flash", "gemini-2.5-flash"];
-            if (targetTable === 'Contratos') return ["gemini-3.0-flash", "gemini-2.5-flash"];
+            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') return ["gemini-2.5-flash", "gemini-1.5-flash"];
+            if (targetTable === 'Contratos') return ["gemini-2.5-flash", "gemini-1.5-flash"];
             if (targetTable === 'Catalogo_Conceptos' || targetTable === 'Catalogo') return ["gemini-3.0-flash", "gemini-2.5-flash"];
             if (targetTable === 'Estimaciones' || targetTable === 'Facturas') return ["gemini-3.0-flash", "gemini-2.5-flash"];
 
@@ -703,7 +703,9 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             method: "post",
             contentType: "application/json",
             payload: JSON.stringify(payload),
-            muteHttpExceptions: true
+            muteHttpExceptions: true,
+            validateHttpsCertificates: true,
+            followRedirects: true
         };
 
         let llmString = null;
@@ -712,6 +714,8 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
         for (const modelId of modelsToTry) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`;
+                // @ts-ignore
+                UrlFetchApp.setRequestTimeout(60000);
                 const response = UrlFetchApp.fetch(url, options);
                 const resultJson = JSON.parse(response.getContentText());
 
