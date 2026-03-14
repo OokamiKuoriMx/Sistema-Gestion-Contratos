@@ -367,10 +367,15 @@ REGLAS DE ORO (ESTRICTAS):
 5. **JSON COMPLETO**: Asegúrate de cerrar todas las llaves y corchetes, incluso si el documento es muy extenso.
 6. **TIPO INSUMO**: El tipo de insumo es un número (1, 2 o 3) que indica el tipo de insumo (Material, Mano de Obra, Equipo).
 7. **GUARDIA DE SEGURIDAD (CRÍTICO)**: Si el documento es meramente un texto legal de cláusulas y NO contiene tablas de desgloses de precios unitarios con insumos, devuelve {"tipo_documento": "ERROR_ES_CONTRATO"}.
+8. **NO CLASIFICAR SOLAMENTE**: Está PROHIBIDO responder solo con "tipo_documento", "nivel_confianza" o un objeto vacío. Debes devolver la estructura completa de extracción aunque algunos valores queden en null o [].
+9. **MÍNIMO OPERATIVO PARA UPSERT**: Debes intentar devolver al menos un elemento en "conceptos" cuando exista cualquier tabla APU legible. Cada concepto debe incluir "Clave_Concepto", "Descripcion_Concepto" y su arreglo "insumos".
+10. **CAMPOS FALTANTES**: Si un dato puntual no es visible, usa null. No omitas la estructura raíz ni reemplaces la extracción por una clasificación.
+11. **LECTURA MULTIPÁGINA**: Recorre todas las páginas antes de responder. No te detengas en la primera coincidencia visual.
 
 Estructura JSON:
 {
   "tipo_documento": "APU",
+  "nivel_confianza": "Alto",
   "datos_extraidos": {
     "conceptos": [
       {
@@ -505,6 +510,11 @@ REGLAS CRÍTICAS DE LECTURA MATRICIAL (ANCLAJE DE PERIODOS):
 3. **LECTURA VERTICAL**: Para CADA PERIODO, lee hacia abajo. Registra en 'Conceptos' de ese Periodo TODOS los montos y porcentajes asociados alineados verticalmente bajo esa columna.
 4. **INTEGRIDAD POR PERIODO**: Es OBLIGATORIO extraer todos los periodos (desde el primero hasta el último).
 5. **NOMBRES EN MAYÚSCULAS**: Escribe siempre los nombres de los periodos en MAYÚSCULAS.
+6. **NO CLASIFICAR SOLAMENTE**: Está PROHIBIDO responder solo con "tipo_documento", "nivel_confianza" o un objeto vacío. Debes devolver "datos_extraidos" con estructura útil para guardar.
+7. **MÍNIMO OPERATIVO PARA UPSERT**: Debes intentar devolver "Fechas_Generales" y al menos un elemento en "Periodos_Programados" cuando exista cualquier calendario o matriz legible.
+8. **CONCEPTOS POR PERIODO**: Si en un periodo identificas montos o porcentajes, debes crear su objeto dentro de "Conceptos". No dejes periodos con datos visibles pero sin conceptos.
+9. **CAMPOS FALTANTES**: Si alguna fecha, cantidad o importe no es legible, usa null. No elimines la estructura ni reemplaces la extracción por clasificación.
+10. **LECTURA TOTAL DEL DOCUMENTO**: Revisa todas las páginas y columnas antes de responder. No te detengas al reconocer que el archivo es un PROGRAMA.
 `;
 
 const PROMPT_VALIDACION_ESTIMACIONES = `
@@ -581,23 +591,35 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             }
         }
 
-        // 2. Seleccionar el Modelo y Fallbacks (Actualizado a modelos vigentes)
+        const estimatedInputBytes = b64 ? Math.floor((b64.length * 3) / 4) : 0;
+        const esPdf = (mimeType || '').toLowerCase().includes('pdf');
+        const esPdfPesado = esPdf && estimatedInputBytes >= (4 * 1024 * 1024);
+
+        // 2. Seleccionar el Modelo y Fallbacks (Familia Gemini 2.5, balance costo/robustez)
         const modelsToTry = (function () {
-            // Alta Complejidad (Tablas y Razonamiento Espacial profundo)
+            // Alta complejidad: tablas densas y razonamiento espacial profundo.
             if (targetTable === 'Matriz_Insumos' || targetTable === 'Análisis_P_U') return ["gemini-2.5-pro", "gemini-2.5-flash"];
-            if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') return ["gemini-2.5-pro", "gemini-2.5-flash"];
+            if (targetTable === 'Programa' || targetTable === 'Programa_Ejecucion') return ["gemini-2.5-pro"];
 
             // Media Complejidad (Prosa legal y Extracción Mixta)
-            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') return ["gemini-2.5-flash", "gemini-2.0-flash"];
-            if (targetTable === 'Contratos') return ["gemini-2.5-flash", "gemini-2.0-flash"];
-            if (targetTable === 'Catalogo_Conceptos' || targetTable === 'Catalogo') return ["gemini-2.5-flash", "gemini-2.0-flash"];
-            if (targetTable === 'Estimaciones' || targetTable === 'Facturas') return ["gemini-2.5-flash", "gemini-2.0-flash"];
+            if (targetTable === 'Convenios_Recurso' || targetTable === 'CAF') {
+                return esPdfPesado ? ["gemini-2.5-pro", "gemini-2.5-flash"] : ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+            }
+            if (targetTable === 'Contratos') {
+                return esPdfPesado ? ["gemini-2.5-pro", "gemini-2.5-flash"] : ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+            }
+            if (targetTable === 'Catalogo_Conceptos' || targetTable === 'Catalogo') {
+                return esPdfPesado ? ["gemini-2.5-pro", "gemini-2.5-flash"] : ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+            }
+            if (targetTable === 'Estimaciones' || targetTable === 'Facturas') {
+                return esPdfPesado ? ["gemini-2.5-pro", "gemini-2.5-flash"] : ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+            }
 
-            // Baja Complejidad (Texto legal plano corto)
+            // Baja complejidad: priorizar costo.
             if (targetTable === 'Fianza') return ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
 
-            // Default Fallback
-            return ["gemini-2.5-flash", "gemini-2.0-flash"];
+            // Default: costo eficiente, con Pro como respaldo si el PDF es pesado.
+            return esPdfPesado ? ["gemini-2.5-pro", "gemini-2.5-flash"] : ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
         })();
 
         let systemPrompt = (function () {
@@ -613,9 +635,9 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
 
 
         // 3. Construir prompt adicional con contexto dinámico
-        let promptAdicional = `Lee este archivo oficial. Debes extraer los datos en formato JSON basado en el esquema solicitado.`;
+        let promptAdicional = `Lee este archivo oficial. Debes extraer los datos en formato JSON basado en el esquema solicitado. No respondas solo con una clasificación; devuelve siempre la estructura completa de extracción, usando null o [] si algún campo no es legible.`;
         if (targetTable) {
-            promptAdicional += `\n\nATENCIÓN: El documento se carga para la tabla '${targetTable}'.`;
+            promptAdicional += `\n\nATENCIÓN: El documento se carga para la tabla '${targetTable}'. Tu respuesta debe servir para UPSERT en base de datos, así que no basta con identificar el tipo documental: debes poblar la estructura de extracción de esa tabla.`;
 
             if (targetTable === 'Fianza') {
                 try {
@@ -682,6 +704,20 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             }
         }
 
+        if (b64 && esPdf && (
+            targetTable === 'Programa' ||
+            targetTable === 'Programa_Ejecucion' ||
+            targetTable === 'Matriz_Insumos' ||
+            targetTable === 'AnÃ¡lisis_P_U' ||
+            targetTable === 'Catalogo_Conceptos' ||
+            targetTable === 'Catalogo'
+        )) {
+            const textoOCRAuxiliar = extraerTextoRapidoPDF(b64, mimeType);
+            if (textoOCRAuxiliar && textoOCRAuxiliar.trim().length > 80) {
+                promptAdicional += `\n\nOCR AUXILIAR DEL DOCUMENTO (usa este texto como apoyo para leer encabezados, claves, periodos y conceptos; prioriza la evidencia visual del PDF si hay conflicto):\n${textoOCRAuxiliar}`;
+            }
+        }
+
         const partsArr = [
             { text: "INSTRUCCIONES_SISTEMA: " + systemPrompt },
             { text: "CONTEXTO_ADICIONAL: " + promptAdicional }
@@ -707,8 +743,136 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
             muteHttpExceptions: true
         };
 
+        const esExtraccionInsuficiente = (extractionObj, tablaObjetivo) => {
+            if (!extractionObj || typeof extractionObj !== 'object') return true;
+
+            const payloadExtraido = extractionObj.datos_extraidos || extractionObj.datos || extractionObj;
+            if (!payloadExtraido || typeof payloadExtraido !== 'object') return true;
+
+            const tieneElementos = (arr) => Array.isArray(arr) && arr.length > 0;
+            const tieneValores = (obj) => !!(
+                obj &&
+                typeof obj === 'object' &&
+                Object.values(obj).some(v => v !== null && v !== undefined && v !== '')
+            );
+
+            switch ((tablaObjetivo || '').toString()) {
+                case 'Programa':
+                case 'Programa_Ejecucion':
+                    return !(
+                        payloadExtraido.Tipo_Programa ||
+                        tieneValores(payloadExtraido.Fechas_Generales) ||
+                        tieneElementos(payloadExtraido.Periodos_Programados) ||
+                        tieneElementos(payloadExtraido.Periodos_Identificados) ||
+                        tieneElementos(payloadExtraido.conceptos_programados) ||
+                        tieneElementos(payloadExtraido.Programa_Periodo) ||
+                        tieneElementos(payloadExtraido.Programa_Ejecucion) ||
+                        tieneElementos(payloadExtraido.Catalogo_Conceptos)
+                    );
+                case 'Matriz_Insumos':
+                case 'Análisis_P_U':
+                    return !(
+                        tieneElementos(payloadExtraido.conceptos) ||
+                        (payloadExtraido.concepto_padre && Object.keys(payloadExtraido.concepto_padre).length > 0) ||
+                        tieneElementos(payloadExtraido.insumos) ||
+                        (payloadExtraido.porcentajes_contrato && Object.keys(payloadExtraido.porcentajes_contrato).length > 0)
+                    );
+                case 'Contratos':
+                    return !(
+                        payloadExtraido.Numero_Contrato ||
+                        payloadExtraido.Objeto_Contrato ||
+                        (payloadExtraido.Contratista && Object.keys(payloadExtraido.Contratista).length > 0) ||
+                        (payloadExtraido.Montos && Object.keys(payloadExtraido.Montos).length > 0)
+                    );
+                case 'Convenios_Recurso':
+                case 'CAF':
+                    return !(
+                        payloadExtraido.Numero_Acuerdo ||
+                        payloadExtraido.Nombre_Fondo ||
+                        payloadExtraido.Monto_Apoyo ||
+                        payloadExtraido.Objeto_Programa
+                    );
+                case 'Catalogo_Conceptos':
+                case 'Catalogo':
+                    return !tieneElementos(payloadExtraido.conceptos);
+                case 'Fianza':
+                    return !(extractionObj.validacion && Object.keys(extractionObj.validacion).length > 0);
+                default:
+                    return Object.keys(payloadExtraido).length === 0;
+            }
+        };
+
+        const describirFaltantesExtraccion = (extractionObj, tablaObjetivo) => {
+            const payloadExtraido = extractionObj?.datos_extraidos || extractionObj?.datos || extractionObj || {};
+            const faltantes = [];
+            const tieneElementos = (arr) => Array.isArray(arr) && arr.length > 0;
+            const tieneValores = (obj) => !!(
+                obj &&
+                typeof obj === 'object' &&
+                Object.values(obj).some(v => v !== null && v !== undefined && v !== '')
+            );
+
+            switch ((tablaObjetivo || '').toString()) {
+                case 'Programa':
+                case 'Programa_Ejecucion':
+                    if (!payloadExtraido.Tipo_Programa) faltantes.push('Tipo_Programa');
+                    if (!tieneValores(payloadExtraido.Fechas_Generales)) faltantes.push('Fechas_Generales');
+                    if (!tieneElementos(payloadExtraido.Periodos_Programados) && !tieneElementos(payloadExtraido.Periodos_Identificados) && !tieneElementos(payloadExtraido.Programa_Periodo)) {
+                        faltantes.push('Periodos');
+                    }
+                    if (!tieneElementos(payloadExtraido.conceptos_programados) && !tieneElementos(payloadExtraido.Programa_Ejecucion) && !tieneElementos(payloadExtraido.Catalogo_Conceptos)) {
+                        faltantes.push('Conceptos/Avances');
+                    }
+                    break;
+                case 'Matriz_Insumos':
+                case 'AnÃ¡lisis_P_U':
+                    if (!tieneElementos(payloadExtraido.conceptos) && !tieneValores(payloadExtraido.concepto_padre)) faltantes.push('Conceptos');
+                    if (!tieneElementos(payloadExtraido.insumos)) faltantes.push('Insumos');
+                    break;
+                default:
+                    if (!payloadExtraido || Object.keys(payloadExtraido).length === 0) faltantes.push('Sin datos extraidos');
+                    break;
+            }
+
+            return faltantes;
+        };
+
+        const parsearRespuestaIA = (textoIA) => {
+            let extractionLocal;
+            let jsonLimpioLocal = limpiarJSONIA(textoIA);
+
+            try {
+                extractionLocal = JSON.parse(jsonLimpioLocal);
+            } catch (errJson) {
+                console.warn("JSON Malformed detectado. Iniciando protocolo de rescate de datos...");
+
+                try {
+                    let rescatado = jsonLimpioLocal.replace(/,\s*(?:\"[^\"]*\"?|[^{}\[\]]*)*$/, '');
+
+                    if ((rescatado.match(/"/g) || []).length % 2 !== 0) rescatado += '"';
+                    if (rescatado.includes('"insumos": [')) rescatado += ']';
+                    if (rescatado.includes('"conceptos": [')) rescatado += ']';
+                    if (rescatado.includes('"datos_extraidos": {')) rescatado += '}';
+                    rescatado += '}';
+
+                    extractionLocal = JSON.parse(rescatado);
+                    console.log("¡Rescate de JSON exitoso! Se guardará lo procesado hasta el corte.");
+                } catch (errRescate) {
+                    console.error("Fallo definitivo en el rescate:", errRescate, "Texto truncado:", jsonLimpioLocal);
+                    throw new Error("El documento es demasiado denso o la IA respondió con un JSON incompleto. Divide el archivo y vuelve a intentar.");
+                }
+            }
+
+            return extractionLocal;
+        };
+
         let llmString = null;
+        let extraction = null;
         let lastError = null;
+        let modelErrors = [];
+        let bestPartialExtraction = null;
+        let bestPartialRaw = null;
+        let bestPartialModel = null;
 
         for (const modelId of modelsToTry) {
             try {
@@ -741,51 +905,60 @@ function procesarDocumentoConIA(base64Data, mimeType, targetTable = null, contex
                 if (response.getResponseCode() !== 200) {
                     console.warn(`Extracción falló con ${modelId} (${response.getResponseCode()}): ${response.getContentText()}`);
                     lastError = resultJson.error?.message || response.getContentText();
+                    modelErrors.push(`${modelId}: HTTP ${response.getResponseCode()} - ${lastError}`);
+                    continue;
+                }
+                const candidateText = resultJson.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!candidateText) {
+                    lastError = `El modelo ${modelId} no devolvio contenido utilizable.`;
+                    modelErrors.push(lastError);
                     continue;
                 }
 
-                llmString = resultJson.candidates[0].content.parts[0].text;
-                if (llmString) break; // Éxito
+                const extractionCandidate = parsearRespuestaIA(candidateText);
+                if (esExtraccionInsuficiente(extractionCandidate, targetTable)) {
+                    lastError = `El modelo ${modelId} devolvio una extraccion insuficiente para '${targetTable || "GENERAL"}'.`;
+                    console.warn(lastError, extractionCandidate);
+                    modelErrors.push(lastError);
+                    if (!bestPartialExtraction) {
+                        bestPartialExtraction = extractionCandidate;
+                        bestPartialRaw = candidateText;
+                        bestPartialModel = modelId;
+                    }
+                    continue;
+                }
+
+                llmString = candidateText;
+                extraction = extractionCandidate;
+                if (llmString) break; // Exito
             } catch (err) {
                 lastError = err.toString();
                 console.error(`Error de red con ${modelId}:`, err);
+                modelErrors.push(`${modelId}: ${lastError}`);
             }
         }
-
         if (!llmString) {
-            throw new Error(`No se pudo extraer información del documento después de varios intentos. Último error: ${lastError}`);
+            if (bestPartialExtraction) {
+                const datosParciales = bestPartialExtraction.datos_extraidos || bestPartialExtraction.datos || bestPartialExtraction;
+                return {
+                    success: false,
+                    error: `Extraccion parcial insuficiente para guardar. Ultimo error: ${lastError}`,
+                    functionName: 'procesarDocumentoConIA',
+                    partial_extraction: sanitizeData(bestPartialExtraction),
+                    partial_data: sanitizeData(datosParciales),
+                    partial_model: bestPartialModel,
+                    partial_raw_ai_extraction: bestPartialRaw,
+                    missing_fields: describirFaltantesExtraccion(bestPartialExtraction, targetTable),
+                    model_errors: modelErrors
+                };
+            }
+            throw new Error(`No se pudo extraer informacion del documento despues de varios intentos. Ultimo error: ${lastError}`);
         }
 
         // --- LOG PROVISIONAL DE EXTRACCIÓN ---
         console.log("RAW_AI_EXTRACTION [" + (targetTable || "GENERAL") + "]:", llmString);
-        
-        let extraction;
-        let jsonLimpio = limpiarJSONIA(llmString);
-
-        try {
-            extraction = JSON.parse(jsonLimpio);
-        } catch (errJson) {
-            console.warn("JSON Malformed detectado. Iniciando protocolo de rescate de datos...");
-            
-            try {
-                // 1. Limpiar cualquier fragmento incompleto al final (ej. una coma o llave abierta a medias)
-                let rescatado = jsonLimpio.replace(/,\s*(?:"[^"]*"?|[^{}\[\]]*)*$/, '');
-                
-                // 2. Si se quedó a la mitad de un texto, forzar cierre de comillas
-                if ((rescatado.match(/"/g) || []).length % 2 !== 0) rescatado += '"';
-
-                // 3. Forzar el cierre de la jerarquía de las matrices de APU
-                if (rescatado.includes('"insumos": [')) rescatado += ']';
-                if (rescatado.includes('"conceptos": [')) rescatado += ']';
-                if (rescatado.includes('"datos_extraidos": {')) rescatado += '}';
-                rescatado += '}'; // Cierre maestro del JSON
-
-                extraction = JSON.parse(rescatado);
-                console.log("¡Rescate de JSON exitoso! Se guardará lo procesado hasta el corte.");
-            } catch (errRescate) {
-                console.error("Fallo definitivo en el rescate:", errRescate, "Texto truncado:", jsonLimpio);
-                throw new Error("El documento (APU) es demasiado denso. La IA extrajo tanta información que superó su límite máximo de memoria. SUGERENCIA: Divide el PDF del APU en partes (ej. bloques de 5 páginas) y súbelas al orquestador; el sistema las unirá inteligentemente al mismo contrato.");
-            }
+        if (!extraction) {
+            extraction = parsearRespuestaIA(llmString);
         }
 
         const datosFinales = extraction.datos_extraidos || extraction.datos || extraction;
