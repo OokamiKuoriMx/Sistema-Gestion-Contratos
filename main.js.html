@@ -30,6 +30,7 @@
     window.toggleSidebar = function () {
         const sidebar = document.getElementById('sidebar');
         const icon = document.getElementById('toggle-icon');
+        if (!sidebar || !icon) return;
         sidebar.classList.toggle('collapsed');
 
         const isCollapsed = sidebar.classList.contains('collapsed');
@@ -43,16 +44,67 @@
         }
     };
 
+    window.openMobileSidebar = function () {
+        const sidebar = document.getElementById('mobile-sidebar');
+        const backdrop = document.getElementById('mobile-sidebar-backdrop');
+        if (!sidebar || !backdrop) return;
+        sidebar.classList.add('is-open');
+        backdrop.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    };
+
+    window.closeMobileSidebar = function () {
+        const sidebar = document.getElementById('mobile-sidebar');
+        const backdrop = document.getElementById('mobile-sidebar-backdrop');
+        if (!sidebar || !backdrop) return;
+        sidebar.classList.remove('is-open');
+        backdrop.classList.add('hidden');
+        const hayModalAbierto = Array.from(document.querySelectorAll('.fixed')).some(el => !el.classList.contains('hidden') && el.id !== 'mobile-sidebar-backdrop' && el.id !== 'mobile-sidebar');
+        if (!hayModalAbierto) {
+            document.body.classList.remove('overflow-hidden');
+        }
+    };
+
     window.setActiveLink = function (el) {
-        document.querySelectorAll('.nav-link').forEach(link => {
+        if (!el) return;
+        const links = Array.from(document.querySelectorAll('.nav-link'));
+        const targetView = (el.getAttribute('onclick') || '').match(/cargarVista\('([^']+)'/)?.[1];
+        links.forEach(link => {
+            const isDesktopLabel = !!link.querySelector('.sidebar-text');
             link.classList.remove('active', 'bg-white/5');
-            link.querySelector('.sidebar-text').classList.replace('text-white', 'text-slate-300');
-            link.querySelector('div').classList.replace('text-blue-500', 'text-slate-400');
+            link.removeAttribute('aria-current');
+            if (isDesktopLabel) {
+                link.querySelector('.sidebar-text')?.classList.replace('text-white', 'text-slate-300');
+            }
         });
 
         el.classList.add('active', 'bg-white/5');
-        el.querySelector('.sidebar-text').classList.replace('text-slate-300', 'text-white');
-        el.querySelector('div').classList.replace('text-slate-400', 'text-blue-500');
+        el.setAttribute('aria-current', 'page');
+        el.querySelector('.sidebar-text')?.classList.replace('text-slate-300', 'text-white');
+
+        if (targetView) {
+            document.querySelectorAll('.mobile-nav-link').forEach(link => {
+                const mobileView = (link.getAttribute('onclick') || '').match(/cargarVista\('([^']+)'/)?.[1];
+                const active = mobileView === targetView;
+                link.classList.toggle('active', active);
+                if (active) link.setAttribute('aria-current', 'page');
+                else link.removeAttribute('aria-current');
+            });
+        }
+    };
+
+    window.setActiveLinkByView = function (viewName) {
+        const desktop = Array.from(document.querySelectorAll('#sidebar .nav-link')).find(link => (link.getAttribute('onclick') || '').includes(`'${viewName}'`));
+        const mobile = Array.from(document.querySelectorAll('#mobile-sidebar .mobile-nav-link')).find(link => (link.getAttribute('onclick') || '').includes(`'${viewName}'`));
+        if (desktop) window.setActiveLink(desktop);
+        if (mobile) {
+            document.querySelectorAll('#mobile-sidebar .mobile-nav-link').forEach(link => {
+                const active = link === mobile;
+                link.classList.toggle('active', active);
+                if (active) link.setAttribute('aria-current', 'page');
+                else link.removeAttribute('aria-current');
+            });
+        }
     };
 
     // Initialize sidebar state
@@ -62,6 +114,19 @@
             document.getElementById('sidebar').classList.add('collapsed');
             document.getElementById('toggle-icon').classList.add('rotate-180');
         }
+
+        const mobileTrigger = document.querySelector('header button.md\\:hidden');
+        if (mobileTrigger) {
+            mobileTrigger.setAttribute('type', 'button');
+            mobileTrigger.setAttribute('aria-label', 'Abrir menú principal');
+            mobileTrigger.addEventListener('click', openMobileSidebar);
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeMobileSidebar();
+            }
+        });
     });
 
     // Utilidades Globales
@@ -232,6 +297,11 @@
         } else if (e.detail.vista === 'importacion_maestra.vw') {
             inicializarImportacionMaestra();
         }
+
+        setActiveLinkByView(e.detail.vista);
+        habilitarFilasAccesibles();
+        inicializarTabsAccesibles();
+        closeMobileSidebar();
     });
 
     /**
@@ -243,6 +313,7 @@
         document.querySelectorAll('.tab-content').forEach(el => {
             el.classList.add('hidden');
             el.classList.remove('block');
+            el.setAttribute('tabindex', '-1');
         });
 
         // 2. Mostrar la pestaña seleccionada
@@ -250,6 +321,7 @@
         if (target) {
             target.classList.remove('hidden');
             target.classList.add('block');
+            target.setAttribute('tabindex', '0');
 
             // Si entramos al programa, refrescar con el orden actual de conceptos
             if (tabId === 'tab-programa' && window.programaActual) {
@@ -266,13 +338,61 @@
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('border-inst-vino', 'text-inst-vino', 'bg-inst-crema/30');
             btn.classList.add('border-transparent', 'text-slate-400');
+            btn.setAttribute('aria-selected', 'false');
+            btn.setAttribute('tabindex', '-1');
         });
 
         const activeBtn = document.getElementById(`btn-${tabId}`);
         if (activeBtn) {
             activeBtn.classList.remove('border-transparent', 'text-slate-400');
             activeBtn.classList.add('border-inst-vino', 'text-inst-vino', 'bg-inst-crema/30');
+            activeBtn.setAttribute('aria-selected', 'true');
+            activeBtn.setAttribute('tabindex', '0');
         }
+    }
+
+    function inicializarTabsAccesibles() {
+        const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+        if (!tabButtons.length) return;
+
+        tabButtons.forEach((btn, index) => {
+            btn.setAttribute('role', 'tab');
+            btn.setAttribute('tabindex', index === 0 ? '0' : '-1');
+            btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+            if (btn.dataset.keyboardReady === 'true') return;
+            btn.dataset.keyboardReady = 'true';
+            btn.addEventListener('keydown', (event) => {
+                const currentIndex = tabButtons.indexOf(btn);
+                let nextIndex = currentIndex;
+                if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabButtons.length;
+                if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabButtons.length) % tabButtons.length;
+                if (nextIndex !== currentIndex) {
+                    event.preventDefault();
+                    tabButtons[nextIndex].focus();
+                    tabButtons[nextIndex].click();
+                }
+            });
+        });
+
+        document.querySelectorAll('.tab-content').forEach((panel) => {
+            panel.setAttribute('role', 'tabpanel');
+        });
+    }
+
+    function habilitarFilasAccesibles() {
+        document.querySelectorAll('tr[onclick]').forEach((row) => {
+            row.classList.add('keyboard-row');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('role', 'link');
+            if (row.dataset.keyboardReady === 'true') return;
+            row.dataset.keyboardReady = 'true';
+            row.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    row.click();
+                }
+            });
+        });
     }
 
     // --- Controladores: Dashboard --- //
@@ -445,6 +565,7 @@
                     </tr>
                 `;
             }).join('');
+            habilitarFilasAccesibles();
         }
     }
 
@@ -611,6 +732,7 @@
         });
 
         tbody.innerHTML = htmlRows;
+        habilitarFilasAccesibles();
     }
 
     // --- Controladores: Detalle de un Contrato --- //
@@ -2491,6 +2613,10 @@
                         // Preservar metadatos críticos para guardarDatosIA
                         datosExtraidos.tipo_documento = resIA.data.tipo_documento;
                         datosExtraidos.parentContext = resIA.data.parentContext;
+                        debugApuData("INDIVIDUAL_EXTRACCION", datosExtraidos, {
+                            tipoImportacion: targetTable,
+                            parentContext: parentContext
+                        });
                         const informeAuditoria = resIA.data.informe_auditoria || null;
                         const checklistAuditoria = resIA.data.checklist_auditoria || null;
 
@@ -2904,6 +3030,11 @@
                 .withSuccessHandler((response) => {
                     // --- LOG NAVEGADOR (ORQUESTADOR BATCH) ---
                     console.log("DEBUG_IA_BATCH_RESPONSE:", response);
+                    debugApuData("BATCH_EXTRACCION", response && response.data ? (response.data.datos || response.data) : null, {
+                        table: table,
+                        context: context,
+                        mime: mime
+                    });
 
                     if (response.error) {
                         // Si es un timeout y tenemos reintentos, lo lanzamos de nuevo con Flash
@@ -3485,6 +3616,11 @@
         }
 
         // Si el modal de importación sigue abierto, actualizar status allí
+        debugApuData("PRE_GUARDADO", datos, {
+            idContratoActual: window.idContratoActual || null,
+            idConceptoMatrizActual: window.idConceptoMatrizActual || null
+        });
+
         const modalIA = document.getElementById('modal-importacion-ia');
         if (modalIA && !modalIA.classList.contains('hidden')) {
             updateAIStatus(true, "Guardando Datos...", "Sincronizando Catálogo y Matrices con la base de datos");
@@ -4811,5 +4947,37 @@
         
         window.ultimoResultadoFianzaIA = null;
     };
+
+    function debugApuData(stage, datos, extra = {}) {
+        try {
+            if (!datos) return;
+            const tipo = String(datos.tipo_documento || extra.tipoImportacion || extra.table || '').toUpperCase();
+            const esApu = tipo.includes('APU') || tipo.includes('MATRIZ');
+            if (!esApu) return;
+
+            const conceptos = Array.isArray(datos.Catalogo_Conceptos) ? datos.Catalogo_Conceptos : (Array.isArray(datos.conceptos) ? datos.conceptos : []);
+            const insumos = Array.isArray(datos.Matriz_Insumos) ? datos.Matriz_Insumos : (Array.isArray(datos.insumos) ? datos.insumos : []);
+            const resumen = {
+                stage: stage,
+                tipo: tipo,
+                totalConceptos: conceptos.length,
+                totalInsumos: insumos.length,
+                clavesConcepto: conceptos.map(c => c.Clave || c.Clave_Concepto || null).filter(Boolean),
+                clavesPadreInsumos: insumos.map(i => i.Clave_Concepto_Padre || i.Clave_Padre || i.Clave_Concepto_Temp || null).filter(Boolean).slice(0, 20),
+                descripcionesPadre: insumos.map(i => i.Descripcion_Concepto_Padre || null).filter(Boolean).slice(0, 10),
+                parentContext: datos.parentContext || extra.parentContext || extra.context || null,
+                extra: extra
+            };
+
+            console.group(`[APU_DEBUG] ${stage}`);
+            console.log("Resumen:", resumen);
+            console.log("Conceptos:", conceptos);
+            console.log("Insumos:", insumos);
+            console.log("Payload completo:", datos);
+            console.groupEnd();
+        } catch (err) {
+            console.warn("APU_DEBUG_ERROR:", err);
+        }
+    }
 
 </script>

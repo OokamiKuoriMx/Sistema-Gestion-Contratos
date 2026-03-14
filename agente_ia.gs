@@ -1714,7 +1714,7 @@ function guardarDatosIA(respuestaIA, tablaDestino = null, idConvenioVinculado = 
                     }
 
                     // --- BÚSQUEDA POR LLAVE SECUNDARIA (skName) ---
-                    if (!match && skName && registro[skName]) {
+                    if (!match && skName && registro[skName] && !['Programa', 'Catalogo_Conceptos'].includes(tabla)) {
                         const condSk = {}; condSk[skName] = registro[skName];
                         const resSk = dbSelect(tabla, condSk);
                         if (resSk && resSk.length > 0) {

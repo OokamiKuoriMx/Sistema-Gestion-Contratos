@@ -18,6 +18,33 @@
         --inst-crema: #f4efdf;
     }
 
+    body {
+        background:
+            radial-gradient(circle at top left, rgba(166, 127, 44, 0.14), transparent 24%),
+            radial-gradient(circle at top right, rgba(97, 18, 50, 0.10), transparent 30%),
+            linear-gradient(180deg, #f7f4ee 0%, #eef2f6 100%);
+    }
+
+    .shell-background {
+        position: relative;
+    }
+
+    .shell-background::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.65), transparent 22%),
+            radial-gradient(circle at 80% 0%, rgba(166, 127, 44, 0.08), transparent 18%);
+        pointer-events: none;
+    }
+
+    .shell-sidebar {
+        background:
+            linear-gradient(180deg, rgba(97, 18, 50, 0.98) 0%, rgba(74, 14, 38, 0.98) 100%),
+            var(--inst-vino);
+    }
+
     /* Asegurar que el spinner global bloquea toda interacción cuando está visible y usa animaciones suaves */
     #global-spinner {
         transition: opacity 0.3s ease-in-out;
@@ -61,10 +88,12 @@
     .nav-link {
         transition: all 0.2s ease;
         position: relative;
+        border: 1px solid transparent;
     }
 
     .nav-link:hover {
         background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(230, 209, 148, 0.15);
     }
 
     /* Rehilete Pattern Utility */
@@ -83,11 +112,12 @@
     }
 
     .nav-link.active {
-        background: rgba(255, 255, 255, 0.08);
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
         border-left: 4px solid var(--inst-oro);
         border-radius: 0 0.75rem 0.75rem 0;
         /* Solo redondeado a la derecha al ser activo con borde izquierdo */
         margin-left: 0;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
 
     .nav-link:not(.active) {
@@ -109,6 +139,59 @@
     .sidebar-text {
         transition: opacity 0.2s ease;
         white-space: nowrap;
+    }
+
+    .focus-ring:focus-visible {
+        outline: 3px solid rgba(166, 127, 44, 0.45);
+        outline-offset: 3px;
+    }
+
+    .mobile-sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 25;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(6px);
+    }
+
+    .mobile-sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.28s ease;
+    }
+
+    .mobile-sidebar.is-open {
+        transform: translateX(0);
+    }
+
+    .mobile-nav-link.active {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(230, 209, 148, 0.2);
+    }
+
+    .tab-scroller {
+        scrollbar-width: none;
+    }
+
+    .tab-scroller::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-btn {
+        white-space: nowrap;
+    }
+
+    .tab-btn[aria-selected="true"] {
+        box-shadow: inset 0 -2px 0 var(--inst-vino);
+    }
+
+    .keyboard-row {
+        position: relative;
+    }
+
+    .keyboard-row:focus-visible {
+        outline: 3px solid rgba(166, 127, 44, 0.42);
+        outline-offset: -3px;
+        background: rgba(166, 127, 44, 0.06);
     }
 
     /* Glassmorphism effects */
@@ -181,5 +264,15 @@
     .card-hover-effect:hover {
         transform: translateY(-8px) scale(1.01);
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+    }
+
+    @media (max-width: 767px) {
+        #sidebar {
+            display: none !important;
+        }
+
+        .nav-link.active {
+            border-radius: 1rem;
+        }
     }
 </style>

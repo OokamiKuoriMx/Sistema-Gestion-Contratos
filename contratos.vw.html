@@ -1,13 +1,13 @@
 <div class="px-8 py-8 md:px-12 md:py-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-0">
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
         <div>
             <h1 class="text-lg font-black text-inst-vino uppercase tracking-tighter italic">Listado de Contratos</h1>
             <p class="text-base font-black text-inst-oro uppercase tracking-wider mt-2">Consulta y seguimiento del
                 padrón de contratos de la dependencia</p>
         </div>
-        <div class="flex space-x-3">
-            <button onclick="abrirImportadorIA()"
-                class="bg-white hover:bg-inst-crema/10 text-inst-vino text-base border border-inst-oro/30 font-semibold py-0 px-7 rounded-xl shadow-sm transition-all duration-200 flex items-center group">
+        <div class="flex flex-wrap gap-3">
+            <button type="button" onclick="abrirImportadorIA()"
+                class="bg-white hover:bg-inst-crema/40 text-inst-vino text-sm md:text-base border border-inst-oro/30 font-semibold py-3 px-5 md:px-7 rounded-2xl shadow-sm transition-all duration-200 flex items-center group focus-ring">
                 <svg class="w-6 h-6 mr-2 text-inst-oro group-hover:scale-110 transition-transform" fill="none"
                     stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -16,8 +16,8 @@
                 </svg>
                 Importar con IA
             </button>
-            <button
-                class="bg-inst-vino hover:bg-black text-white text-base font-semibold py-0 px-7 rounded-xl shadow-lg shadow-inst-vino/20 transition-all duration-200 flex items-center active:transform active:scale-95">
+            <button type="button" disabled aria-disabled="true" title="Disponible en una siguiente iteración"
+                class="bg-slate-200 text-slate-500 text-sm md:text-base font-semibold py-3 px-5 md:px-7 rounded-2xl shadow-sm transition-all duration-200 flex items-center cursor-not-allowed">
                 <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                     xmlns="http://www.w3.org/2000/svg">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -49,16 +49,16 @@
                 <thead>
                     <tr class="bg-slate-100/60 border-b border-slate-200">
                         <th
-                            class="px-12 py-4 text-left text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-3/12">
+                            class="px-5 md:px-12 py-4 text-left text-[13px] md:text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-3/12">
                             No. Contrato</th>
                         <th
-                            class="px-12 py-4 text-left text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-5/12">
+                            class="px-5 md:px-12 py-4 text-left text-[13px] md:text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-5/12">
                             Objeto del Contrato</th>
                         <th
-                            class="px-12 py-4 text-right text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-2/12">
+                            class="px-5 md:px-12 py-4 text-right text-[13px] md:text-[15px] font-black text-slate-500 uppercase tracking-widest border-r border-slate-200/50 w-2/12">
                             Monto C/IVA</th>
                         <th
-                            class="px-12 py-4 text-center text-[15px] font-black text-slate-500 uppercase tracking-widest w-2/12">
+                            class="px-5 md:px-12 py-4 text-center text-[13px] md:text-[15px] font-black text-slate-500 uppercase tracking-widest w-2/12">
                             Estado Actual</th>
                     </tr>
                 </thead>

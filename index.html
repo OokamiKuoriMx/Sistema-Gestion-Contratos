@@ -47,7 +47,7 @@
   <?!= include('styles.css'); ?>
 </head>
 
-<body class="bg-gray-100 font-sans text-gray-800 antialiased overflow-hidden">
+<body class="bg-stone-100 font-sans text-gray-800 antialiased overflow-hidden">
 
   <!-- Spinner Global (Bloqueo de UI) -->
   <div id="global-spinner"
@@ -56,11 +56,11 @@
   </div>
 
   <!-- Layout Principal -->
-  <div class="flex h-screen overflow-hidden">
+  <div class="flex h-screen overflow-hidden shell-background">
 
     <!-- Sidebar -->
     <aside id="sidebar"
-      class="w-64 bg-inst-vino text-white flex flex-col hidden md:flex relative z-20 shadow-2xl border-r border-inst-oro/30">
+      class="w-72 bg-inst-vino text-white flex flex-col hidden md:flex relative z-20 shadow-2xl border-r border-inst-oro/30 shell-sidebar">
       <!-- Sidebar Header & Toggle -->
       <div class="h-20 flex items-center px-4 border-b border-inst-oro/20 bg-black/10 backdrop-blur-md">
         <div class="flex items-center space-x-3 overflow-hidden">
@@ -72,8 +72,8 @@
       </div>
 
       <!-- Botón de Toggle Flotante (Premium Design) -->
-      <button onclick="toggleSidebar()"
-        class="absolute -right-3 top-9 w-6 h-6 bg-inst-oro text-inst-vino rounded-full flex items-center justify-center shadow-xl border border-white/20 hover:scale-110 active:scale-95 transition-all z-50 group">
+      <button type="button" onclick="toggleSidebar()" aria-label="Colapsar menú lateral"
+        class="absolute -right-3 top-9 w-6 h-6 bg-inst-oro text-inst-vino rounded-full flex items-center justify-center shadow-xl border border-white/20 hover:scale-110 active:scale-95 transition-all z-50 group focus-ring">
         <svg id="toggle-icon" class="w-4 h-4 transition-transform duration-300" fill="none" stroke="currentColor"
           viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7"></path>
@@ -81,9 +81,9 @@
       </button>
 
       <!-- Navigation -->
-      <nav class="flex-1 px-0 py-8 space-y-4">
-        <a href="#" onclick="cargarVista('dashboard.vw'); setActiveLink(this); return false;"
-          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group active">
+      <nav class="flex-1 px-3 py-8 space-y-2" aria-label="Navegación principal">
+        <a href="#" onclick="cargarVista('dashboard.vw'); setActiveLink(this); closeMobileSidebar(); return false;"
+          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group active rounded-2xl focus-ring" aria-current="page">
           <div
             class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
             <svg class="w-5 h-5 text-inst-oro" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,8 +96,8 @@
             class="sidebar-text ml-4 text-base font-bold text-slate-300 group-hover:text-white group-[.active]:text-white">Dashboard</span>
         </a>
 
-        <a href="#" onclick="cargarVista('contratos.vw'); setActiveLink(this); return false;"
-          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group">
+        <a href="#" onclick="cargarVista('contratos.vw'); setActiveLink(this); closeMobileSidebar(); return false;"
+          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group rounded-2xl focus-ring">
           <div
             class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
             <svg class="w-5 h-5 text-slate-400 group-hover:text-inst-oro transition-colors" fill="none"
@@ -110,8 +110,8 @@
           <span class="sidebar-text ml-4 text-base font-bold text-slate-300 group-hover:text-white">Contratos</span>
         </a>
 
-        <a href="#" onclick="cargarVista('importacion_maestra.vw'); setActiveLink(this); return false;"
-          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group">
+        <a href="#" onclick="cargarVista('importacion_maestra.vw'); setActiveLink(this); closeMobileSidebar(); return false;"
+          class="nav-link flex items-center px-4 py-3 transition-all duration-300 group rounded-2xl focus-ring">
           <div
             class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
             <svg class="w-5 h-5 text-slate-400 group-hover:text-inst-oro transition-colors" fill="none"
@@ -139,6 +139,65 @@
           </div>
         </div>
       </div>
+    </aside>
+
+    <div id="mobile-sidebar-backdrop" class="mobile-sidebar-backdrop hidden md:hidden" onclick="closeMobileSidebar()"></div>
+    <aside id="mobile-sidebar"
+      class="mobile-sidebar md:hidden bg-inst-vino text-white fixed inset-y-0 left-0 z-30 w-[86vw] max-w-[320px] border-r border-inst-oro/30 shadow-2xl">
+      <div class="h-20 flex items-center justify-between px-5 border-b border-inst-oro/20 bg-black/10">
+        <div class="flex items-center space-x-3 overflow-hidden">
+          <div
+            class="sidebar-icon-container bg-inst-oro rounded-lg flex items-center justify-center text-inst-vino font-black shadow-lg shadow-inst-oro/20">
+            S</div>
+          <h1 class="text-base font-black tracking-wider uppercase text-inst-crema">SGC System</h1>
+        </div>
+        <button type="button" onclick="closeMobileSidebar()" aria-label="Cerrar menú"
+          class="w-10 h-10 rounded-2xl bg-white/10 hover:bg-white/20 transition-colors flex items-center justify-center focus-ring">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <nav class="px-3 py-6 space-y-2" aria-label="Navegación móvil">
+        <a href="#" onclick="cargarVista('dashboard.vw'); setActiveLinkByView('dashboard.vw'); closeMobileSidebar(); return false;"
+          class="mobile-nav-link nav-link flex items-center px-4 py-3 transition-all duration-300 group rounded-2xl active focus-ring">
+          <div
+            class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
+            <svg class="w-5 h-5 text-inst-oro" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+              </path>
+            </svg>
+          </div>
+          <span class="ml-4 text-base font-bold text-white">Dashboard</span>
+        </a>
+        <a href="#" onclick="cargarVista('contratos.vw'); setActiveLinkByView('contratos.vw'); closeMobileSidebar(); return false;"
+          class="mobile-nav-link nav-link flex items-center px-4 py-3 transition-all duration-300 group rounded-2xl focus-ring">
+          <div
+            class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
+            <svg class="w-5 h-5 text-slate-300 group-hover:text-inst-oro transition-colors" fill="none"
+              stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+              </path>
+            </svg>
+          </div>
+          <span class="ml-4 text-base font-bold text-white">Contratos</span>
+        </a>
+        <a href="#" onclick="cargarVista('importacion_maestra.vw'); setActiveLinkByView('importacion_maestra.vw'); closeMobileSidebar(); return false;"
+          class="mobile-nav-link nav-link flex items-center px-4 py-3 transition-all duration-300 group rounded-2xl focus-ring">
+          <div
+            class="sidebar-icon-container flex items-center justify-center rounded-lg bg-white/5 group-hover:bg-inst-oro/20 transition-colors">
+            <svg class="w-5 h-5 text-slate-300 group-hover:text-inst-oro transition-colors" fill="none"
+              stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12">
+              </path>
+            </svg>
+          </div>
+          <span class="ml-4 text-base font-bold text-white">Importación Maestra</span>
+        </a>
+      </nav>
     </aside>
 
     <!-- Área de Contenido -->
